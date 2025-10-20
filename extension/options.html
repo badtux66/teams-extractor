@@ -44,15 +44,15 @@
   </head>
   <body>
     <h1>Teams Güncelleme → Jira</h1>
-    <label for="webhookUrl">
-      n8n Webhook URL
-      <span class="hint">Example: https://example.n8n.cloud/webhook/teams-to-jira</span>
+    <label for="processorUrl">
+      Local Processor URL
+      <span class="hint">Default: http://localhost:8090/ingest</span>
     </label>
-    <input id="webhookUrl" type="url" placeholder="https://..." required>
+    <input id="processorUrl" type="url" placeholder="http://localhost:8090/ingest" required>
 
     <label for="apiKey">
-      Webhook API Key
-      <span class="hint">Used as X-API-Key header</span>
+      Processor API Key
+      <span class="hint">Optional X-API-Key header</span>
     </label>
     <input id="apiKey" type="password" placeholder="secret">
 

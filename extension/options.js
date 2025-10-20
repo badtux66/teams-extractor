@@ -1,7 +1,7 @@
 const STORAGE_KEY = "teamsJiraSettings";
 
 const defaults = {
-  webhookUrl: "",
+  processorUrl: "http://localhost:8090/ingest",
   apiKey: "",
   userName: "",
   channelName: "Güncelleme Planlama",
@@ -14,7 +14,7 @@ const defaults = {
 async function load() {
   const saved = await chrome.storage.sync.get(STORAGE_KEY);
   const settings = { ...defaults, ...(saved[STORAGE_KEY] || {}) };
-  document.getElementById("webhookUrl").value = settings.webhookUrl;
+  document.getElementById("processorUrl").value = settings.processorUrl;
   document.getElementById("apiKey").value = settings.apiKey;
   document.getElementById("userName").value = settings.userName;
   document.getElementById("channelName").value = settings.channelName;
@@ -30,15 +30,15 @@ async function save() {
   try {
     const rawKeywords = document.getElementById("keywords").value.trim();
     const payload = {
-      webhookUrl: document.getElementById("webhookUrl").value.trim(),
+      processorUrl: document.getElementById("processorUrl").value.trim(),
       apiKey: document.getElementById("apiKey").value.trim(),
       userName: document.getElementById("userName").value.trim(),
       channelName: document.getElementById("channelName").value.trim() || defaults.channelName,
       keywords: rawKeywords ? JSON.parse(rawKeywords) : defaults.keywords
     };
 
-    if (!payload.webhookUrl) {
-      throw new Error("Webhook URL is required");
+    if (!payload.processorUrl) {
+      throw new Error("Processor URL is required");
     }
     if (!payload.userName) {
       throw new Error("Teams display name is required");

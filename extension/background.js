@@ -25,7 +25,7 @@ async function enqueue(payload) {
 
 async function processQueue() {
   const settings = await loadSettings();
-  if (!settings || !settings.webhookUrl) {
+  if (!settings || !settings.processorUrl) {
     return;
   }
 
@@ -36,9 +36,9 @@ async function processQueue() {
 
   for (const item of queue) {
     try {
-      await postToWebhook(settings, item.payload);
+      await postToProcessor(settings, item.payload);
     } catch (err) {
-      console.error("[Teams Jira] webhook dispatch failed", err);
+      console.error("[Teams Jira] processor dispatch failed", err);
       const attempts = item.attempts + 1;
       if (attempts < RETRY_LIMIT) {
         remaining.push({ ...item, attempts });
@@ -51,7 +51,7 @@ async function processQueue() {
   await saveQueue(remaining);
 }
 
-async function postToWebhook(settings, payload) {
+async function postToProcessor(settings, payload) {
   const body = JSON.stringify({
     ...payload,
     receivedAt: new Date().toISOString()
@@ -64,7 +64,7 @@ async function postToWebhook(settings, payload) {
     headers["X-API-Key"] = settings.apiKey;
   }
 
-  const res = await fetch(settings.webhookUrl, {
+  const res = await fetch(settings.processorUrl, {
     method: "POST",
     mode: "cors",
     headers,
@@ -73,7 +73,7 @@ async function postToWebhook(settings, payload) {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Webhook ${res.status}: ${text}`);
+    throw new Error(`Processor ${res.status}: ${text}`);
   }
 }
 

@@ -96,7 +96,7 @@ async function loadSettings() {
   }
   const stored = await chrome.storage.sync.get(STORAGE_KEY);
   settingsCache = {
-    webhookUrl: "",
+    processorUrl: "http://localhost:8090/ingest",
     apiKey: "",
     userName: "",
     channelName: "Güncelleme Planlama",
@@ -111,7 +111,7 @@ async function loadSettings() {
 
 async function handlePotentialMessage(node) {
   const settings = await loadSettings();
-  if (!settings.webhookUrl || !settings.userName) {
+  if (!settings.processorUrl || !settings.userName) {
     return;
   }
   const channel = getCurrentChannelName();

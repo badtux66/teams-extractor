@@ -21,40 +21,14 @@
     },
     {
       "parameters": {
-        "url": "http://localhost:8080/transform",
-        "allowUnauthorizedCerts": true,
-        "options": {
-          "timeout": 30
-        },
-        "sendBody": true,
-        "jsonParameters": true,
-        "bodyParametersJson": "={{$json}}"
+        "functionCode": "const payload = $json;\nconst jira = payload?.jira_payload || {};\nconst resolution = payload?.resolution || {};\nconst processor = payload?.processor || {};\nconst projectKey = payload?.config?.projectKey || $env[\"JIRA_PROJECT_KEY\"] || 'OPS';\n\nreturn [{\n  json: {\n    processor,\n    resolution,\n    jira,\n    fields: {\n      project: { key: projectKey },\n      issuetype: { name: jira.issue_type },\n      summary: jira.summary,\n      description: jira.description,\n      labels: jira.labels || [],\n      customfield_environment: jira.custom_fields?.environment || null,\n      customfield_version: jira.custom_fields?.version || null\n    },\n    comment: jira.comment,\n    metadata: jira.metadata\n  }\n}];"
       },
       "id": "2",
-      "name": "Enrich via MCP",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 1,
-      "position": [
-        520,
-        300
-      ],
-      "credentials": {
-        "httpBasicAuth": {
-          "id": "",
-          "name": ""
-        }
-      }
-    },
-    {
-      "parameters": {
-        "functionCode": "const payload = $json;\nconst jira = $items(\"Enrich via MCP\", 0, 0).json;\nconst projectKey = payload?.config?.projectKey || 'OPS';\n\nreturn [{\n  json: {\n    summary: jira.summary,\n    description: jira.description,\n    fields: {\n      project: { key: projectKey },\n      issuetype: { name: jira.issue_type },\n      summary: jira.summary,\n      description: jira.description,\n      labels: jira.labels,\n      customfield_environment: jira.custom_fields?.environment || null,\n      customfield_version: jira.custom_fields?.version || null\n    },\n    comment: jira.comment,\n    metadata: jira.metadata,\n    source: payload\n  }\n}];"
-      },
-      "id": "3",
       "name": "Prepare Jira Body",
       "type": "n8n-nodes-base.function",
       "typeVersion": 1,
       "position": [
-        780,
+        520,
         300
       ]
     },
@@ -68,6 +42,10 @@
             {
               "fieldId": "summary",
               "fieldValue": "={{$json[\"fields\"][\"summary\"]}}"
+            },
+            {
+              "fieldId": "project",
+              "fieldValue": "={{$json[\"fields\"][\"project\"]}}"
             },
             {
               "fieldId": "issuetype",
@@ -122,17 +100,6 @@
   ],
   "connections": {
     "Teams Webhook": {
-      "main": [
-        [
-          {
-            "node": "Enrich via MCP",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Enrich via MCP": {
       "main": [
         [
           {
