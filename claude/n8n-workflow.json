@@ -1,0 +1,102 @@
+{
+  "name": "Teams to Jira Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "teams-jira-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-receiver",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const messageData = $input.first().json;\nconst type = messageData.type;\nconst text = messageData.text;\nconst sender = messageData.sender;\n\nlet issueType = '';\nlet summary = '';\nlet description = '';\nlet priority = 'Medium';\n\nif (type === 'completed') {\n  issueType = 'Task';\n  summary = `Update Completed - ${sender}`;\n  description = `An update has been completed.\n\nMessage: ${text}\nSender: ${sender}\nChannel: ${messageData.channel}\nTimestamp: ${messageData.timestamp}`;\n  priority = 'Low';\n} else if (type === 'spread') {\n  issueType = 'Task';\n  summary = `Spread Deployment Completed - ${sender}`;\n  description = `A spread deployment has been completed.\n\nMessage: ${text}\nSender: ${sender}\nChannel: ${messageData.channel}\nTimestamp: ${messageData.timestamp}`;\n  priority = 'Low';\n} else if (type === 'requestUpdate') {\n  issueType = 'Sub-task';\n  summary = `Update Request - ${sender}`;\n  description = `An update has been requested.\n\nMessage: ${text}\nSender: ${sender}\nChannel: ${messageData.channel}\nTimestamp: ${messageData.timestamp}`;\n  priority = 'High';\n} else if (type === 'requestSpread') {\n  issueType = 'Sub-task';\n  summary = `Spread Deployment Request - ${sender}`;\n  description = `A spread deployment has been requested.\n\nMessage: ${text}\nSender: ${sender}\nChannel: ${messageData.channel}\nTimestamp: ${messageData.timestamp}`;\n  priority = 'High';\n}\n\nconst extractDetails = (text) => {\n  const systemMatch = text.match(/sistem[:\s]+([^,\\.]+)/i);\n  const versionMatch = text.match(/versiyon[:\s]+([^,\\.]+)/i);\n  const environmentMatch = text.match(/ortam[:\s]+([^,\\.]+)/i);\n  \n  return {\n    system: systemMatch ? systemMatch[1].trim() : '',\n    version: versionMatch ? versionMatch[1].trim() : '',\n    environment: environmentMatch ? environmentMatch[1].trim() : ''\n  };\n};\n\nconst details = extractDetails(text);\n\nif (details.system) {\n  summary = `${summary} - ${details.system}`;\n}\n\nif (details.version) {\n  description += `\n\nVersion: ${details.version}`;\n}\n\nif (details.environment) {\n  description += `\nEnvironment: ${details.environment}`;\n}\n\nreturn {\n  issueType,\n  summary,\n  description,\n  priority,\n  labels: [type, 'teams-automation'],\n  customFields: {\n    teamsMessageId: messageData.messageId,\n    teamsChannel: messageData.channel\n  }\n};"
+      },
+      "id": "process-message",
+      "name": "Process Teams Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "resource": "issue",
+        "operation": "create",
+        "project": "={{ $env.JIRA_PROJECT_KEY }}",
+        "issueType": "={{ $json.issueType }}",
+        "summary": "={{ $json.summary }}",
+        "description": "={{ $json.description }}",
+        "additionalFields": {
+          "priority": {
+            "name": "={{ $json.priority }}"
+          },
+          "labels": "={{ $json.labels }}"
+        }
+      },
+      "id": "create-jira-issue",
+      "name": "Create Jira Issue",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "jiraApi": {
+          "id": "jira-credentials",
+          "name": "Jira API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"jiraIssue\": \"={{ $json.key }}\",\n  \"message\": \"Jira issue created successfully\"\n}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "webhook-receiver": {
+      "main": [
+        [
+          {
+            "node": "process-message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "process-message": {
+      "main": [
+        [
+          {
+            "node": "create-jira-issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create-jira-issue": {
+      "main": [
+        [
+          {
+            "node": "webhook-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
