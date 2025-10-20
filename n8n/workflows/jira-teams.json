@@ -1,0 +1,175 @@
+{
+  "name": "Teams Güncelleme → Jira",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "teams-guncelleme",
+        "responseMode": "lastNode",
+        "options": {
+          "responseData": "success"
+        }
+      },
+      "id": "1",
+      "name": "Teams Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8080/transform",
+        "allowUnauthorizedCerts": true,
+        "options": {
+          "timeout": 30
+        },
+        "sendBody": true,
+        "jsonParameters": true,
+        "bodyParametersJson": "={{$json}}"
+      },
+      "id": "2",
+      "name": "Enrich via MCP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        520,
+        300
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const payload = $json;\nconst jira = $items(\"Enrich via MCP\", 0, 0).json;\nconst projectKey = payload?.config?.projectKey || 'OPS';\n\nreturn [{\n  json: {\n    summary: jira.summary,\n    description: jira.description,\n    fields: {\n      project: { key: projectKey },\n      issuetype: { name: jira.issue_type },\n      summary: jira.summary,\n      description: jira.description,\n      labels: jira.labels,\n      customfield_environment: jira.custom_fields?.environment || null,\n      customfield_version: jira.custom_fields?.version || null\n    },\n    comment: jira.comment,\n    metadata: jira.metadata,\n    source: payload\n  }\n}];"
+      },
+      "id": "3",
+      "name": "Prepare Jira Body",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "issue",
+        "additionalFields": {},
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "summary",
+              "fieldValue": "={{$json[\"fields\"][\"summary\"]}}"
+            },
+            {
+              "fieldId": "issuetype",
+              "fieldValue": "={{$json[\"fields\"][\"issuetype\"]}}"
+            },
+            {
+              "fieldId": "description",
+              "fieldValue": "={{$json[\"fields\"][\"description\"]}}"
+            },
+            {
+              "fieldId": "labels",
+              "fieldValue": "={{$json[\"fields\"][\"labels\"]}}"
+            }
+          ]
+        },
+        "options": {
+          "updateMode": "manual"
+        }
+      },
+      "id": "4",
+      "name": "Create Jira Issue",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        300
+      ],
+      "credentials": {
+        "jiraSoftwareCloudApi": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "options": {
+          "responseCode": 200
+        },
+        "responseBody": "Issue created"
+      },
+      "id": "5",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Teams Webhook": {
+      "main": [
+        [
+          {
+            "node": "Enrich via MCP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich via MCP": {
+      "main": [
+        [
+          {
+            "node": "Prepare Jira Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Jira Body": {
+      "main": [
+        [
+          {
+            "node": "Create Jira Issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Jira Issue": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "id": "teams-jira-automation"
+}

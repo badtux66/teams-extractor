@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Teams Güncelleme → Jira</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 24px;
+        color: #1f1f1f;
+        background: #fafafa;
+      }
+      h1 {
+        font-size: 18px;
+        margin-bottom: 16px;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin-top: 12px;
+      }
+      input, textarea {
+        box-sizing: border-box;
+        width: 100%;
+        padding: 8px;
+        font-size: 14px;
+        margin-top: 4px;
+      }
+      .hint {
+        font-size: 12px;
+        color: #666;
+      }
+      button {
+        margin-top: 20px;
+        padding: 10px 16px;
+        font-size: 14px;
+      }
+      .status {
+        margin-top: 12px;
+        font-size: 12px;
+        color: #0078d4;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Teams Güncelleme → Jira</h1>
+    <label for="webhookUrl">
+      n8n Webhook URL
+      <span class="hint">Example: https://example.n8n.cloud/webhook/teams-to-jira</span>
+    </label>
+    <input id="webhookUrl" type="url" placeholder="https://..." required>
+
+    <label for="apiKey">
+      Webhook API Key
+      <span class="hint">Used as X-API-Key header</span>
+    </label>
+    <input id="apiKey" type="password" placeholder="secret">
+
+    <label for="userName">
+      Your Teams Display Name
+      <span class="hint">Only messages authored by this name will be processed</span>
+    </label>
+    <input id="userName" type="text" placeholder="Vahid Çataltaş">
+
+    <label for="channelName">
+      Channel Name
+      <span class="hint">Default: Güncelleme Planlama</span>
+    </label>
+    <input id="channelName" type="text" value="Güncelleme Planlama">
+
+    <label for="keywords">
+      Custom Keywords (JSON)
+      <span class="hint">Leave empty to use defaults</span>
+    </label>
+    <textarea id="keywords" rows="4" placeholder='{"localized":["Güncellendi","Güncellenmiştir"],"global":["Yaygınlaştırıldı","Yaygınlaştırılmıştır"]}'></textarea>
+
+    <button id="saveBtn">Save</button>
+    <div id="status" class="status"></div>
+
+    <script src="options.js"></script>
+  </body>
+</html>

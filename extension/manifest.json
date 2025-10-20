@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Teams Güncelleme → Jira",
+  "description": "Captures Güncelleme Planlama confirmations and forwards them to n8n for Jira automation.",
+  "version": "0.1.0",
+  "permissions": [
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://teams.microsoft.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://teams.microsoft.com/*"
+      ],
+      "js": [
+        "contentScript.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html"
+}
