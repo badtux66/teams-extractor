@@ -1,22 +1,35 @@
 import asyncio
 import json
+import logging
 import os
 import sqlite3
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from mcp.agent import AgentError, JiraPayload, TeamsJiraAgent, TeamsResolution
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(correlation_id)s] - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(os.environ.get("PROCESSOR_DATA_DIR", "data"))
 DB_PATH = DATA_DIR / "teams_messages.db"
 N8N_WEBHOOK_URL = os.environ.get("N8N_WEBHOOK_URL")
 N8N_API_KEY = os.environ.get("N8N_API_KEY")
+# CORS configuration - defaults to localhost only for security
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")
+# Optional API key for authentication
+PROCESSOR_API_KEY = os.environ.get("PROCESSOR_API_KEY")
 
 
 def utcnow() -> str:
@@ -196,11 +209,34 @@ class Message(BaseModel):
 app = FastAPI(title="Teams Resolution Processor")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_headers=["Content-Type", "X-API-Key", "X-Correlation-ID"],
 )
+
+
+@app.middleware("http")
+async def add_correlation_id(request: Request, call_next):
+    """Add correlation ID to all requests for tracking"""
+    correlation_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
+    # Create a custom logger adapter with correlation_id
+    class CorrelationLoggerAdapter(logging.LoggerAdapter):
+        def process(self, msg, kwargs):
+            return msg, {**kwargs, 'extra': {'correlation_id': correlation_id}}
+
+    request.state.correlation_id = correlation_id
+    request.state.logger = CorrelationLoggerAdapter(logger, {'correlation_id': correlation_id})
+    response = await call_next(request)
+    response.headers["X-Correlation-ID"] = correlation_id
+    return response
+
+
+def verify_api_key(x_api_key: Optional[str] = Header(None)) -> None:
+    """Verify API key if PROCESSOR_API_KEY is set"""
+    if PROCESSOR_API_KEY and x_api_key != PROCESSOR_API_KEY:
+        logger.warning("Invalid or missing API key", extra={'correlation_id': 'auth'})
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
 @app.on_event("startup")
@@ -260,10 +296,38 @@ async def process_message(record_id: int, bundle: TeamsResolution) -> None:
 
 
 @app.post("/ingest", response_model=IngestResponse, status_code=202)
-async def ingest(bundle: TeamsResolution) -> IngestResponse:
-    record_id = insert_message(bundle)
-    asyncio.create_task(process_message(record_id, bundle))
-    return IngestResponse(id=record_id, status="queued")
+async def ingest(
+    bundle: TeamsResolution,
+    request: Request,
+    x_api_key: Optional[str] = Header(None)
+) -> IngestResponse:
+    """
+    Ingest a Teams resolution message for processing.
+
+    Requires X-API-Key header if PROCESSOR_API_KEY environment variable is set.
+    """
+    verify_api_key(x_api_key)
+
+    req_logger = request.state.logger
+    req_logger.info(
+        f"Ingesting message from {bundle.author} in {bundle.channel}",
+        extra={'correlation_id': request.state.correlation_id}
+    )
+
+    try:
+        record_id = insert_message(bundle)
+        asyncio.create_task(process_message(record_id, bundle))
+        req_logger.info(
+            f"Message queued with ID {record_id}",
+            extra={'correlation_id': request.state.correlation_id}
+        )
+        return IngestResponse(id=record_id, status="queued")
+    except Exception as e:
+        req_logger.error(
+            f"Failed to ingest message: {str(e)}",
+            extra={'correlation_id': request.state.correlation_id}
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to ingest message: {str(e)}")
 
 
 @app.get("/messages/{record_id}", response_model=Message)

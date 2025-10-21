@@ -1,0 +1,71 @@
+{
+  "extension": {
+    "processorUrl": "http://localhost:8090/ingest",
+    "channelName": "Güncelleme Planlama",
+    "userName": "Your Teams Display Name",
+    "keywords": {
+      "localized": [
+        "Güncellendi",
+        "Updated",
+        "Deployed",
+        "Yayınlandı",
+        "Released"
+      ],
+      "global": [
+        "Global güncellendi",
+        "Global update",
+        "Global deployment",
+        "Rollout complete",
+        "Global yayınlandı"
+      ]
+    },
+    "retrySettings": {
+      "maxRetries": 5,
+      "retryIntervalMs": 60000
+    }
+  },
+  "processor": {
+    "host": "0.0.0.0",
+    "port": 8090,
+    "dataDir": "data",
+    "allowedOrigins": [
+      "http://localhost:3000",
+      "http://localhost:8080",
+      "https://teams.microsoft.com"
+    ],
+    "corsSettings": {
+      "allowCredentials": true,
+      "allowMethods": ["POST", "GET", "OPTIONS"],
+      "allowHeaders": ["Content-Type", "X-API-Key", "X-Correlation-ID"]
+    }
+  },
+  "openai": {
+    "model": "gpt-4.1-mini",
+    "temperature": 0.7,
+    "maxTokens": 1000,
+    "systemPrompt": "Extract deployment information from Teams messages and create structured Jira issue payloads."
+  },
+  "n8n": {
+    "webhookUrl": "https://your-n8n-instance.cloud/webhook/teams-guncelleme",
+    "timeout": 30,
+    "retryOnFailure": true
+  },
+  "jira": {
+    "defaultIssueType": "Task",
+    "defaultPriority": "Medium",
+    "defaultLabels": ["deployment", "automated"],
+    "componentMapping": {
+      "auth": "Authentication Service",
+      "api": "API Gateway",
+      "frontend": "Frontend Application",
+      "database": "Database"
+    }
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - [%(correlation_id)s] - %(message)s",
+    "rotateFiles": true,
+    "maxFileSize": "10MB",
+    "backupCount": 5
+  }
+}

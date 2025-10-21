@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  processor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: teams-processor
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    environment:
+      # Required
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL}
+
+      # Optional
+      - N8N_API_KEY=${N8N_API_KEY:-}
+      - PROCESSOR_API_KEY=${PROCESSOR_API_KEY:-}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:8080}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4.1-mini}
+      - HOST=${HOST:-0.0.0.0}
+      - PORT=${PORT:-8090}
+      - PROCESSOR_DATA_DIR=/app/data
+
+    volumes:
+      # Persist database
+      - processor-data:/app/data
+      # Optional: mount logs directory
+      - ./logs:/app/logs
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8090/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: MCP server
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: teams-mcp-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PORT=8080
+    command: ["uvicorn", "mcp.teams_agent:app", "--host", "0.0.0.0", "--port", "8080"]
+    profiles:
+      - mcp  # Only start with: docker-compose --profile mcp up
+
+volumes:
+  processor-data:
+    driver: local
