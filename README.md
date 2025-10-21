@@ -28,7 +28,7 @@ The requirements file covers both the LLM agent and the local processor (FastAPI
 ## 2. Run the Local Processor
 ```bash
 export OPENAI_API_KEY=sk-...
-export N8N_WEBHOOK_URL=https://example.n8n.cloud/webhook/teams-guncelleme
+export N8N_WEBHOOK_URL=https://edipk.n8n.cloud/webhook/teams-guncelleme
 export N8N_API_KEY=my-shared-secret  # optional
 python -m processor.server
 ```
