@@ -1,0 +1,1 @@
+"""Teams Extractor MCP Server"""

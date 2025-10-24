@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "teams-extractor": {
+      "command": "python",
+      "args": [
+        "/home/user/teams-extractor/mcp-server/server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "/home/user/teams-extractor"
+      }
+    }
+  }
+}

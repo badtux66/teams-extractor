@@ -15,8 +15,6 @@ from mcp.agent import AgentError, JiraPayload, TeamsJiraAgent, TeamsResolution
 
 DATA_DIR = Path(os.environ.get("PROCESSOR_DATA_DIR", "data"))
 DB_PATH = DATA_DIR / "teams_messages.db"
-N8N_WEBHOOK_URL = os.environ.get("N8N_WEBHOOK_URL")
-N8N_API_KEY = os.environ.get("N8N_API_KEY")
 
 
 def utcnow() -> str:
@@ -40,8 +38,6 @@ def init_db() -> None:
                 permalink TEXT,
                 status TEXT NOT NULL,
                 jira_payload_json TEXT,
-                n8n_response_code INTEGER,
-                n8n_response_body TEXT,
                 error TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -102,8 +98,6 @@ def update_message(
     *,
     status: Optional[str] = None,
     jira_payload: Optional[JiraPayload] = None,
-    n8n_code: Optional[int] = None,
-    n8n_body: Optional[str] = None,
     error: Optional[str] = None,
 ) -> None:
     fields = ["updated_at = ?"]
@@ -115,12 +109,6 @@ def update_message(
     if jira_payload is not None:
         fields.append("jira_payload_json = ?")
         values.append(jira_payload.model_dump_json(ensure_ascii=False))
-    if n8n_code is not None:
-        fields.append("n8n_response_code = ?")
-        values.append(n8n_code)
-    if n8n_body is not None:
-        fields.append("n8n_response_body = ?")
-        values.append(n8n_body)
     if error is not None:
         fields.append("error = ?")
         values.append(error)
@@ -161,8 +149,6 @@ class Message(BaseModel):
     permalink: Optional[str]
     status: str
     jira_payload: Optional[Dict[str, Any]]
-    n8n_response_code: Optional[int]
-    n8n_response_body: Optional[str]
     error: Optional[str]
     created_at: str
     updated_at: str
@@ -185,8 +171,6 @@ class Message(BaseModel):
             jira_payload=json.loads(row["jira_payload_json"])
             if row["jira_payload_json"]
             else None,
-            n8n_response_code=row["n8n_response_code"],
-            n8n_response_body=row["n8n_response_body"],
             error=row["error"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
@@ -219,40 +203,11 @@ async def shutdown_event() -> None:
     await http_client.aclose()
 
 
-async def forward_to_n8n(record_id: int, bundle: TeamsResolution, payload: JiraPayload) -> None:
-    if not N8N_WEBHOOK_URL:
-        return
-    http_client: httpx.AsyncClient = app.state.http
-    body = {
-        "processor": {
-            "id": record_id,
-            "status": "processed",
-            "db_path": str(DB_PATH.resolve()),
-        },
-        "resolution": bundle.model_dump(by_alias=True),
-        "jira_payload": payload.model_dump(),
-    }
-    headers = {"Content-Type": "application/json"}
-    if N8N_API_KEY:
-        headers["X-API-Key"] = N8N_API_KEY
-
-    response = await http_client.post(N8N_WEBHOOK_URL, json=body, headers=headers)
-    update_message(
-        record_id,
-        status="forwarded" if response.status_code < 400 else "n8n_error",
-        n8n_code=response.status_code,
-        n8n_body=response.text[:2000],
-    )
-    if response.status_code >= 400:
-        raise RuntimeError(f"n8n responded with {response.status_code}: {response.text}")
-
-
 async def process_message(record_id: int, bundle: TeamsResolution) -> None:
     agent: TeamsJiraAgent = app.state.agent
     try:
         payload = await agent.infer(bundle)
         update_message(record_id, status="processed", jira_payload=payload)
-        await forward_to_n8n(record_id, bundle, payload)
     except AgentError as exc:
         update_message(record_id, status="agent_error", error=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -281,7 +236,6 @@ async def health() -> Dict[str, Any]:
         "status": "ok",
         "model": app.state.agent.model,
         "db": str(DB_PATH.resolve()),
-        "n8n_connected": bool(N8N_WEBHOOK_URL),
     }
 
 
