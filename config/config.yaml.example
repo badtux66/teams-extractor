@@ -1,0 +1,52 @@
+# Microsoft Teams Message Extractor Configuration
+# Copy this file to config.yaml and fill in your credentials
+
+# Microsoft Graph API Configuration
+graph_api:
+  # Azure AD Tenant ID
+  tenant_id: "your-tenant-id-here"
+
+  # Application (Client) ID from Azure AD App Registration
+  client_id: "your-client-id-here"
+
+  # Client Secret (for service principal authentication)
+  # Leave empty if using delegated authentication
+  client_secret: "your-client-secret-here"
+
+  # Use delegated authentication (device code flow) instead of service principal
+  # Set to true for user-based auth, false for app-only auth
+  use_delegated_auth: false
+
+# Jira Integration (optional)
+jira:
+  enabled: false
+  url: "https://yourcompany.atlassian.net"
+  username: "your-email@company.com"
+  api_token: "your-jira-api-token"
+  default_project: "PROJ"
+  default_issue_type: "Task"
+
+# Confluence Integration (optional)
+confluence:
+  enabled: false
+  url: "https://yourcompany.atlassian.net/wiki"
+  username: "your-email@company.com"
+  api_token: "your-confluence-api-token"
+  default_space: "TEAM"
+
+# Email Notifications (optional)
+email:
+  enabled: false
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  username: "your-email@gmail.com"
+  password: "your-app-password"
+  from_address: "your-email@gmail.com"
+  use_tls: true
+
+# Output Settings
+output_dir: "output"
+
+# Logging
+log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+log_file: "logs/teams-extractor.log"  # Optional: uncomment to enable file logging

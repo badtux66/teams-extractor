@@ -1,0 +1,87 @@
+# Scheduled Extraction Jobs Configuration
+# This file defines automated extraction jobs
+
+jobs:
+  # Hourly incident monitoring
+  - name: "incident-monitor"
+    enabled: true
+    schedule: "0 * * * *"  # Every hour at minute 0
+    output_formats:
+      - json
+      - html
+    output_dir: "output/incident-monitor"
+    extraction_config:
+      keywords:
+        - incident
+        - outage
+        - critical
+        - urgent
+        - down
+        - error
+      include_replies: true
+      include_system_messages: false
+      batch_size: 50
+    email_recipients:
+      - ops-team@company.com
+
+  # Daily summary for specific channel
+  - name: "daily-ops-summary"
+    enabled: true
+    schedule: "0 9 * * *"  # Every day at 9 AM
+    output_formats:
+      - markdown
+      - csv
+    output_dir: "output/daily-summaries"
+    extraction_config:
+      channel_names:
+        - "Operations"
+        - "Incidents"
+      include_replies: true
+      batch_size: 100
+    confluence_space: "OPS"
+    confluence_parent_id: "123456"
+
+  # Weekly full extraction
+  - name: "weekly-full-backup"
+    enabled: true
+    schedule: "0 0 * * 0"  # Every Sunday at midnight
+    output_formats:
+      - json
+      - html
+    output_dir: "output/weekly-backups"
+    extraction_config:
+      include_replies: true
+      include_system_messages: true
+      include_deleted: false
+      batch_size: 100
+
+  # Real-time monitoring (every 15 minutes)
+  - name: "realtime-alerts"
+    enabled: false
+    schedule: "*/15 * * * *"  # Every 15 minutes
+    output_formats:
+      - json
+    output_dir: "output/realtime"
+    extraction_config:
+      keywords:
+        - CRITICAL
+        - URGENT
+        - P1
+        - SEV1
+      include_replies: true
+    jira_project: "INC"
+    email_recipients:
+      - oncall@company.com
+
+  # Interval-based extraction (every 6 hours)
+  - name: "periodic-extraction"
+    enabled: true
+    schedule: "interval:6h"
+    output_formats:
+      - json
+      - csv
+    output_dir: "output/periodic"
+    extraction_config:
+      include_replies: true
+      max_messages: 1000
+      batch_size: 50
