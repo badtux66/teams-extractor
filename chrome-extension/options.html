@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Teams Extractor Settings</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f9fafb;
+    }
+    h1 {
+      color: #5b21b6;
+      margin-bottom: 30px;
+    }
+    .section {
+      background: white;
+      padding: 24px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .section h2 {
+      margin: 0 0 20px 0;
+      font-size: 18px;
+      color: #374151;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #374151;
+    }
+    input[type="text"],
+    input[type="number"] {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      margin-right: 8px;
+    }
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+    }
+    button {
+      background-color: #5b21b6;
+      color: white;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      margin-right: 10px;
+    }
+    button:hover {
+      background-color: #6d28d9;
+    }
+    .btn-secondary {
+      background-color: #e5e7eb;
+      color: #374151;
+    }
+    .btn-secondary:hover {
+      background-color: #d1d5db;
+    }
+    .help-text {
+      font-size: 13px;
+      color: #6b7280;
+      margin-top: 6px;
+    }
+    .status-message {
+      padding: 12px;
+      border-radius: 6px;
+      margin-top: 20px;
+      display: none;
+    }
+    .status-message.success {
+      background-color: #d1fae5;
+      color: #065f46;
+      display: block;
+    }
+    .status-message.error {
+      background-color: #fee2e2;
+      color: #991b1b;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <h1>Teams Message Extractor Settings</h1>
+
+  <div class="section">
+    <h2>Backend Configuration</h2>
+    <div class="form-group">
+      <label for="apiUrl">Backend API URL</label>
+      <input type="text" id="apiUrl" placeholder="http://localhost:5000/api">
+      <div class="help-text">URL of the backend service that receives extracted messages</div>
+    </div>
+    <div class="form-group">
+      <label for="apiKey">API Key (Optional)</label>
+      <input type="text" id="apiKey" placeholder="Your API key">
+      <div class="help-text">If your backend requires authentication</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Extraction Settings</h2>
+    <div class="form-group">
+      <label class="checkbox-label">
+        <input type="checkbox" id="enabled" checked>
+        Enable automatic extraction
+      </label>
+    </div>
+    <div class="form-group">
+      <label for="extractInterval">Extract Interval (seconds)</label>
+      <input type="number" id="extractInterval" value="5" min="1" max="60">
+      <div class="help-text">How often to check for new messages</div>
+    </div>
+    <div class="form-group">
+      <label for="batchSize">Batch Size</label>
+      <input type="number" id="batchSize" value="50" min="1" max="500">
+      <div class="help-text">Number of messages to send in each batch</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Advanced Options</h2>
+    <div class="form-group">
+      <label class="checkbox-label">
+        <input type="checkbox" id="extractReactions">
+        Extract message reactions
+      </label>
+    </div>
+    <div class="form-group">
+      <label class="checkbox-label">
+        <input type="checkbox" id="extractThreads" checked>
+        Extract threaded replies
+      </label>
+    </div>
+    <div class="form-group">
+      <label class="checkbox-label">
+        <input type="checkbox" id="extractAttachments">
+        Extract attachment metadata
+      </label>
+    </div>
+    <div class="form-group">
+      <label class="checkbox-label">
+        <input type="checkbox" id="debugMode">
+        Enable debug logging
+      </label>
+    </div>
+  </div>
+
+  <div class="section">
+    <button id="saveBtn">Save Settings</button>
+    <button class="btn-secondary" id="testBtn">Test Connection</button>
+    <button class="btn-secondary" id="resetBtn">Reset to Defaults</button>
+
+    <div id="statusMessage" class="status-message"></div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

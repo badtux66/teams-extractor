@@ -1,0 +1,56 @@
+/* Extension styles */
+
+/* Extraction indicator */
+.teams-extractor-indicator {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #5b21b6;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  z-index: 10000;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.teams-extractor-indicator.active {
+  display: flex;
+}
+
+.teams-extractor-indicator .pulse {
+  width: 8px;
+  height: 8px;
+  background: #10b981;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Extracted message marker */
+[data-extracted="true"] {
+  position: relative;
+}
+
+[data-extracted="true"]::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #10b981;
+  opacity: 0.3;
+}

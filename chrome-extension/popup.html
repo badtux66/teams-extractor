@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Teams Extractor</title>
+  <style>
+    body {
+      width: 350px;
+      padding: 15px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    h2 {
+      margin: 0 0 15px 0;
+      font-size: 18px;
+      color: #5b21b6;
+    }
+    .status {
+      background: #f3f4f6;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+    }
+    .status-item {
+      display: flex;
+      justify-content: space-between;
+      margin: 8px 0;
+      font-size: 14px;
+    }
+    .status-label {
+      color: #6b7280;
+    }
+    .status-value {
+      font-weight: 600;
+      color: #111827;
+    }
+    .indicator {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+    .indicator.active {
+      background-color: #10b981;
+    }
+    .indicator.inactive {
+      background-color: #ef4444;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      margin: 5px 0;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background-color: #5b21b6;
+      color: white;
+    }
+    .btn-primary:hover {
+      background-color: #6d28d9;
+    }
+    .btn-secondary {
+      background-color: #e5e7eb;
+      color: #374151;
+    }
+    .btn-secondary:hover {
+      background-color: #d1d5db;
+    }
+    .section {
+      margin: 15px 0;
+      padding-top: 15px;
+      border-top: 1px solid #e5e7eb;
+    }
+    .section-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #6b7280;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Teams Message Extractor</h2>
+
+  <div class="status">
+    <div class="status-item">
+      <span class="status-label">Status:</span>
+      <span class="status-value">
+        <span class="indicator" id="statusIndicator"></span>
+        <span id="statusText">Checking...</span>
+      </span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Messages Extracted:</span>
+      <span class="status-value" id="messageCount">0</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Queue Size:</span>
+      <span class="status-value" id="queueSize">0</span>
+    </div>
+    <div class="status-item">
+      <span class="status-label">Last Sync:</span>
+      <span class="status-value" id="lastSync">Never</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <button class="btn-primary" id="extractBtn">Extract Now</button>
+    <button class="btn-secondary" id="openGuiBtn">Open Dashboard</button>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Quick Actions</div>
+    <button class="btn-secondary" id="settingsBtn">Settings</button>
+    <button class="btn-secondary" id="viewLogsBtn">View Logs</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
