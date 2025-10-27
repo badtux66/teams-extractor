@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: teams-extractor-backend-dev
+    ports:
+      - "8090:8090"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL}
+      - N8N_API_KEY=${N8N_API_KEY}
+      - HOST=0.0.0.0
+      - PORT=8090
+      - PROCESSOR_DATA_DIR=/app/data
+    volumes:
+      # Mount source code for hot reload in development
+      - ./mcp:/app/mcp
+      - ./processor:/app/processor
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - teams-extractor-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: python -m processor.server
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend.dev
+    container_name: teams-extractor-frontend-dev
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:8090
+    volumes:
+      # Mount source code for hot reload
+      - ./web-gui/frontend:/app
+      - /app/node_modules
+    networks:
+      - teams-extractor-network
+    depends_on:
+      - backend
+    restart: unless-stopped
+    command: npm run dev
+
+networks:
+  teams-extractor-network:
+    driver: bridge
+
+volumes:
+  data:
+    driver: local
+  logs:
+    driver: local
