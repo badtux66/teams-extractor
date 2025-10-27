@@ -1,4 +1,4 @@
-name: NodeJS with Grunt
+name: NodeJS CI
 
 on:
   push:
@@ -9,7 +9,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     strategy:
       matrix:
         node-version: [18.x, 20.x, 22.x]
@@ -22,7 +21,12 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
 
-    - name: Build
+    - name: Build frontend (web-gui/frontend)
+      working-directory: web-gui/frontend
       run: |
-        npm install
-        grunt
+        if [ -f package.json ]; then
+          npm ci
+          npm run build
+        else
+          echo "web-gui/frontend/package.json not found. Skipping frontend build."
+        fi
