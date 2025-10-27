@@ -100,6 +100,13 @@ router.get('/', async (req, res) => {
   // Total response time
   health.responseTime = Date.now() - startTime;
 
+  // Add fields expected by frontend
+  health.model = 'N/A'; // No LLM model in this backend
+  health.db = health.services.postgresql?.status === 'healthy'
+    ? `PostgreSQL (${health.database?.totalMessages || 0} messages)`
+    : 'Disconnected';
+  health.n8n_connected = false; // No n8n integration
+
   // Set HTTP status based on health status
   const statusCode = health.status === 'healthy' ? 200 : 503;
 

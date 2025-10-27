@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Box,
   Card,
@@ -27,17 +27,18 @@ import {
   Select,
   FormControl,
   InputLabel,
+  Stack,
 } from '@mui/material'
-import {
-  Search,
-  Refresh,
-  Visibility,
-  Delete,
-  Replay,
-} from '@mui/icons-material'
+import { Search, Refresh, Visibility, OpenInNew } from '@mui/icons-material'
+import { format } from 'date-fns'
 import { messagesApi } from '../services/api'
 import type { Message } from '../types'
-import { format } from 'date-fns'
+
+type MessageListMeta = {
+  total: number
+  limit: number
+  offset: number
+}
 
 export default function Messages() {
   const [messages, setMessages] = useState<Message[]>([])
@@ -46,8 +47,9 @@ export default function Messages() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [typeFilter, setTypeFilter] = useState<string>('all')
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const [meta, setMeta] = useState<MessageListMeta>({ total: 0, limit: 0, offset: 0 })
 
   useEffect(() => {
     loadMessages()
@@ -55,39 +57,47 @@ export default function Messages() {
 
   useEffect(() => {
     filterMessages()
-  }, [messages, searchTerm, statusFilter])
+  }, [messages, searchTerm, typeFilter])
 
   const loadMessages = async () => {
     try {
       setLoading(true)
-      const data = await messagesApi.getMessages()
-      setMessages(data)
+      const response = await messagesApi.getMessages()
+      setMessages(response.messages)
+      setMeta({ total: response.total, limit: response.limit, offset: response.offset })
       setError(null)
-    } catch (err: any) {
-      setError(err.message || 'Failed to load messages')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load messages'
+      setError(message)
     } finally {
       setLoading(false)
     }
   }
 
   const filterMessages = () => {
+    const term = searchTerm.trim().toLowerCase()
     let filtered = [...messages]
 
-    // Filter by status
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter((msg) => msg.status === statusFilter)
+    if (typeFilter !== 'all') {
+      filtered = filtered.filter(
+        (msg) => (msg.type || '').toLowerCase() === typeFilter.toLowerCase()
+      )
     }
 
-    // Filter by search term
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase()
-      filtered = filtered.filter(
-        (msg) =>
-          msg.author.toLowerCase().includes(term) ||
-          msg.resolution_text.toLowerCase().includes(term) ||
-          msg.channel.toLowerCase().includes(term) ||
-          (msg.quoted_request?.text || '').toLowerCase().includes(term)
-      )
+    if (term) {
+      filtered = filtered.filter((msg) => {
+        const haystack = [
+          msg.content,
+          msg.sender_name,
+          msg.sender_email,
+          msg.channel_name,
+          msg.message_id,
+        ]
+          .filter(Boolean)
+          .map((value) => String(value).toLowerCase())
+
+        return haystack.some((value) => value.includes(term))
+      })
     }
 
     setFilteredMessages(filtered)
@@ -98,48 +108,57 @@ export default function Messages() {
       const fullMessage = await messagesApi.getMessage(message.id)
       setSelectedMessage(fullMessage)
       setDetailsOpen(true)
-    } catch (err: any) {
-      setError(err.message || 'Failed to load message details')
+      setError(null)
+    } catch (err: unknown) {
+      const messageText =
+        err instanceof Error ? err.message : 'Failed to load message details'
+      setError(messageText)
     }
   }
 
-  const handleRetry = async (id: number) => {
-    try {
-      await messagesApi.retryMessage(id)
-      await loadMessages()
-    } catch (err: any) {
-      setError(err.message || 'Failed to retry message')
-    }
+  const handleCloseDetails = () => {
+    setDetailsOpen(false)
+    setSelectedMessage(null)
   }
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this message?')) {
-      return
-    }
-    try {
-      await messagesApi.deleteMessage(id)
-      await loadMessages()
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete message')
-    }
+  const formatTimestamp = (value: string | null | undefined) => {
+    if (!value) return '—'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return value
+    return format(date, 'PPpp')
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'forwarded':
-        return 'success'
-      case 'processed':
-        return 'info'
-      case 'received':
-      case 'queued':
-        return 'warning'
-      case 'failed':
-      case 'agent_error':
-      case 'n8n_error':
-        return 'error'
-      default:
-        return 'default'
+  const messageTypes = useMemo(() => {
+    const types = new Set<string>()
+    messages.forEach((msg) => {
+      if (msg.type) {
+        types.add(msg.type)
+      }
+    })
+    return ['all', ...Array.from(types)]
+  }, [messages])
+
+  const renderJsonBlock = (title: string, data: unknown) => {
+    if (!data || (Array.isArray(data) && data.length === 0)) {
+      return null
     }
+
+    return (
+      <Box>
+        <Typography variant="subtitle2" color="text.secondary">
+          {title}
+        </Typography>
+        <Paper sx={{ p: 2, bgcolor: 'grey.100', mt: 1, maxHeight: 240, overflow: 'auto' }}>
+          <Typography
+            component="pre"
+            variant="body2"
+            sx={{ m: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+          >
+            {JSON.stringify(data, null, 2)}
+          </Typography>
+        </Paper>
+      </Box>
+    )
   }
 
   if (loading) {
@@ -153,7 +172,12 @@ export default function Messages() {
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Messages</Typography>
+        <Box>
+          <Typography variant="h4">Messages</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Showing {filteredMessages.length} of {meta.total} stored messages
+          </Typography>
+        </Box>
         <IconButton onClick={loadMessages} color="primary">
           <Refresh />
         </IconButton>
@@ -165,14 +189,13 @@ export default function Messages() {
         </Alert>
       )}
 
-      {/* Filters */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
           <Grid container spacing={2}>
             <Grid item xs={12} md={8}>
               <TextField
                 fullWidth
-                placeholder="Search messages..."
+                placeholder="Search by content, sender, channel..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 InputProps={{
@@ -186,19 +209,17 @@ export default function Messages() {
             </Grid>
             <Grid item xs={12} md={4}>
               <FormControl fullWidth>
-                <InputLabel>Status</InputLabel>
+                <InputLabel>Type</InputLabel>
                 <Select
-                  value={statusFilter}
-                  label="Status"
-                  onChange={(e) => setStatusFilter(e.target.value)}
+                  value={typeFilter}
+                  label="Type"
+                  onChange={(e) => setTypeFilter(e.target.value)}
                 >
-                  <MenuItem value="all">All</MenuItem>
-                  <MenuItem value="received">Received</MenuItem>
-                  <MenuItem value="processed">Processed</MenuItem>
-                  <MenuItem value="forwarded">Forwarded</MenuItem>
-                  <MenuItem value="failed">Failed</MenuItem>
-                  <MenuItem value="agent_error">Agent Error</MenuItem>
-                  <MenuItem value="n8n_error">n8n Error</MenuItem>
+                  {messageTypes.map((type) => (
+                    <MenuItem key={type} value={type}>
+                      {type === 'all' ? 'All' : type}
+                    </MenuItem>
+                  ))}
                 </Select>
               </FormControl>
             </Grid>
@@ -206,17 +227,16 @@ export default function Messages() {
         </CardContent>
       </Card>
 
-      {/* Messages Table */}
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>ID</TableCell>
+              <TableCell>Message</TableCell>
               <TableCell>Channel</TableCell>
-              <TableCell>Author</TableCell>
-              <TableCell>Status</TableCell>
+              <TableCell>Sender</TableCell>
+              <TableCell sx={{ maxWidth: 320 }}>Preview</TableCell>
               <TableCell>Type</TableCell>
-              <TableCell>Created At</TableCell>
+              <TableCell>Timestamp</TableCell>
               <TableCell>Actions</TableCell>
             </TableRow>
           </TableHead>
@@ -232,26 +252,32 @@ export default function Messages() {
             ) : (
               filteredMessages.map((message) => (
                 <TableRow key={message.id} hover>
-                  <TableCell>{message.id}</TableCell>
-                  <TableCell>{message.channel}</TableCell>
-                  <TableCell>{message.author}</TableCell>
                   <TableCell>
-                    <Chip
-                      label={message.status}
-                      color={getStatusColor(message.status)}
-                      size="small"
-                    />
+                    <Typography variant="body2" fontWeight="medium">
+                      {message.message_id || message.id}
+                    </Typography>
+                    {message.url && (
+                      <Typography variant="caption" color="text.secondary">
+                        {message.url}
+                      </Typography>
+                    )}
+                  </TableCell>
+                  <TableCell>{message.channel_name || '—'}</TableCell>
+                  <TableCell>
+                    <Typography variant="body2">{message.sender_name || '—'}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {message.sender_email || '—'}
+                    </Typography>
+                  </TableCell>
+                  <TableCell sx={{ maxWidth: 320 }}>
+                    <Typography variant="body2" noWrap>
+                      {message.content}
+                    </Typography>
                   </TableCell>
                   <TableCell>
-                    <Chip
-                      label={message.classification.type}
-                      size="small"
-                      variant="outlined"
-                    />
+                    <Chip label={message.type || 'message'} size="small" variant="outlined" />
                   </TableCell>
-                  <TableCell>
-                    {format(new Date(message.created_at), 'MMM dd, yyyy HH:mm')}
-                  </TableCell>
+                  <TableCell>{formatTimestamp(message.timestamp)}</TableCell>
                   <TableCell>
                     <IconButton
                       size="small"
@@ -260,25 +286,18 @@ export default function Messages() {
                     >
                       <Visibility fontSize="small" />
                     </IconButton>
-                    {(message.status === 'failed' ||
-                      message.status === 'agent_error' ||
-                      message.status === 'n8n_error') && (
+                    {message.url && (
                       <IconButton
+                        component="a"
+                        href={message.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         size="small"
-                        onClick={() => handleRetry(message.id)}
-                        title="Retry"
+                        title="Open in Teams"
                       >
-                        <Replay fontSize="small" />
+                        <OpenInNew fontSize="small" />
                       </IconButton>
                     )}
-                    <IconButton
-                      size="small"
-                      onClick={() => handleDelete(message.id)}
-                      title="Delete"
-                      color="error"
-                    >
-                      <Delete fontSize="small" />
-                    </IconButton>
                   </TableCell>
                 </TableRow>
               ))
@@ -287,91 +306,92 @@ export default function Messages() {
         </Table>
       </TableContainer>
 
-      {/* Message Details Dialog */}
-      <Dialog
-        open={detailsOpen}
-        onClose={() => setDetailsOpen(false)}
-        maxWidth="md"
-        fullWidth
-      >
+      <Dialog open={detailsOpen} onClose={handleCloseDetails} maxWidth="md" fullWidth>
         <DialogTitle>Message Details</DialogTitle>
-        <DialogContent>
+        <DialogContent dividers>
           {selectedMessage && (
-            <Box sx={{ mt: 2 }}>
+            <Stack spacing={3} sx={{ mt: 1 }}>
               <Grid container spacing={2}>
-                <Grid item xs={12}>
+                <Grid item xs={12} md={6}>
                   <Typography variant="subtitle2" color="text.secondary">
-                    Resolution Text
+                    Message ID
                   </Typography>
-                  <Paper sx={{ p: 2, bgcolor: 'grey.100', mt: 1 }}>
-                    <Typography variant="body2">{selectedMessage.resolution_text}</Typography>
-                  </Paper>
+                  <Typography variant="body2">
+                    {selectedMessage.message_id || selectedMessage.id}
+                  </Typography>
                 </Grid>
-
-                {selectedMessage.quoted_request && (
-                  <Grid item xs={12}>
-                    <Typography variant="subtitle2" color="text.secondary">
-                      Quoted Request
-                    </Typography>
-                    <Paper sx={{ p: 2, bgcolor: 'grey.100', mt: 1 }}>
-                      <Typography variant="body2" fontWeight="bold">
-                        {selectedMessage.quoted_request.author}
-                      </Typography>
-                      <Typography variant="body2" sx={{ mt: 1 }}>
-                        {selectedMessage.quoted_request.text}
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                )}
-
-                {selectedMessage.jira_payload && (
-                  <Grid item xs={12}>
-                    <Typography variant="subtitle2" color="text.secondary">
-                      Jira Payload
-                    </Typography>
-                    <Paper sx={{ p: 2, bgcolor: 'grey.100', mt: 1 }}>
-                      <pre style={{ margin: 0, fontSize: '0.85rem', overflow: 'auto' }}>
-                        {JSON.stringify(selectedMessage.jira_payload, null, 2)}
-                      </pre>
-                    </Paper>
-                  </Grid>
-                )}
-
-                {selectedMessage.error && (
-                  <Grid item xs={12}>
-                    <Typography variant="subtitle2" color="error">
-                      Error
-                    </Typography>
-                    <Paper sx={{ p: 2, bgcolor: 'error.light', mt: 1 }}>
-                      <Typography variant="body2" color="error.contrastText">
-                        {selectedMessage.error}
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                )}
-
-                {selectedMessage.permalink && (
-                  <Grid item xs={12}>
-                    <Typography variant="subtitle2" color="text.secondary">
-                      Teams Link
-                    </Typography>
-                    <Typography variant="body2" sx={{ mt: 1 }}>
-                      <a
-                        href={selectedMessage.permalink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {selectedMessage.permalink}
-                      </a>
-                    </Typography>
-                  </Grid>
-                )}
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Timestamp
+                  </Typography>
+                  <Typography variant="body2">
+                    {formatTimestamp(selectedMessage.timestamp)}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Channel
+                  </Typography>
+                  <Typography variant="body2">
+                    {selectedMessage.channel_name || selectedMessage.channel_id || '—'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Sender
+                  </Typography>
+                  <Typography variant="body2">
+                    {selectedMessage.sender_name || '—'}
+                    {selectedMessage.sender_email && (
+                      <>
+                        <br />
+                        <Typography variant="caption" color="text.secondary">
+                          {selectedMessage.sender_email}
+                        </Typography>
+                      </>
+                    )}
+                  </Typography>
+                </Grid>
               </Grid>
-            </Box>
+
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary">
+                  Message Content
+                </Typography>
+                <Paper sx={{ p: 2, bgcolor: 'grey.100', mt: 1 }}>
+                  <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
+                    {selectedMessage.content}
+                  </Typography>
+                </Paper>
+              </Box>
+
+              {selectedMessage.url && (
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Teams Link
+                  </Typography>
+                  <Button
+                    sx={{ mt: 1 }}
+                    variant="outlined"
+                    size="small"
+                    href={selectedMessage.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    endIcon={<OpenInNew fontSize="small" />}
+                  >
+                    Open in Teams
+                  </Button>
+                </Box>
+              )}
+
+              {renderJsonBlock('Reactions', selectedMessage.reactions)}
+              {renderJsonBlock('Attachments', selectedMessage.attachments)}
+              {renderJsonBlock('Metadata', selectedMessage.metadata)}
+            </Stack>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDetailsOpen(false)}>Close</Button>
+          <Button onClick={handleCloseDetails}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

@@ -60,6 +60,7 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: ${PORT:-5000}
       DATABASE_URL: postgresql://${POSTGRES_ADMIN_USER:-teams_admin}:${POSTGRES_ADMIN_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-teams_extractor}
+      DATABASE_SSL: ${DATABASE_SSL:-false}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}

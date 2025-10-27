@@ -206,10 +206,24 @@ router.get('/', async (req, res) => {
 
     const queryText = `
       SELECT
-        id, message_id, channel_id, channel_name, content,
-        sender_id, sender_name, sender_email, timestamp,
-        url, type, thread_id, reactions,
-        created_at, updated_at
+        id,
+        message_id,
+        channel_id,
+        channel_name,
+        content,
+        sender_id,
+        sender_name,
+        sender_email,
+        timestamp,
+        url,
+        type,
+        thread_id,
+        attachments,
+        reactions,
+        metadata,
+        extracted_at,
+        created_at,
+        updated_at
       FROM teams.messages
       ${whereSQL}
       ORDER BY timestamp DESC

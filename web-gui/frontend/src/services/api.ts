@@ -13,28 +13,32 @@ export const healthApi = {
   },
 }
 
+type MessageListResponse = {
+  messages: Message[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export const messagesApi = {
-  getMessages: async (params?: any): Promise<Message[]> => {
+  getMessages: async (params?: Record<string, unknown>): Promise<MessageListResponse> => {
     const { data } = await api.get('/messages', { params })
-    return data
+    return {
+      messages: data.messages || [],
+      total: typeof data.total === 'number' ? data.total : data.messages?.length ?? 0,
+      limit: typeof data.limit === 'number' ? data.limit : data.messages?.length ?? 0,
+      offset: typeof data.offset === 'number' ? data.offset : 0,
+    }
   },
 
-  getMessage: async (id: number): Promise<Message> => {
+  getMessage: async (id: number | string): Promise<Message> => {
     const { data } = await api.get(`/messages/${id}`)
-    return data
+    return data.message || data
   },
 
   getStats: async (): Promise<Stats> => {
     const { data } = await api.get('/stats')
-    return data
-  },
-
-  deleteMessage: async (id: number): Promise<void> => {
-    await api.delete(`/messages/${id}`)
-  },
-
-  retryMessage: async (id: number): Promise<void> => {
-    await api.post(`/messages/${id}/retry`)
+    return data.stats || data
   },
 }
 

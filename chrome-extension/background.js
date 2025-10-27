@@ -95,11 +95,14 @@ chrome.alarms.create('periodicSync', {
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'periodicSync') {
     // Trigger extraction in all Teams tabs
-    chrome.tabs.query({ url: 'https://teams.microsoft.com/*' }, (tabs) => {
-      tabs.forEach(tab => {
-        chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_NOW' });
-      });
-    });
+    chrome.tabs.query(
+      { url: ['https://teams.microsoft.com/*', 'https://*.teams.microsoft.com/*'] },
+      (tabs) => {
+        tabs.forEach(tab => {
+          chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_NOW' });
+        });
+      }
+    );
   }
 });
 
@@ -107,7 +110,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
  * Handle tab updates (navigate to Teams)
  */
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url?.includes('teams.microsoft.com')) {
+  if (changeInfo.status === 'complete' && /https:\/\/([\w.-]+\.)?teams\.microsoft\.com/i.test(tab.url || '')) {
     console.log('Teams tab loaded:', tabId);
     updateBadge('⟳', 'gray');
   }

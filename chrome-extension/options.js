@@ -67,7 +67,7 @@ function saveSettings() {
     showMessage('Settings saved successfully!', 'success');
 
     // Update all content scripts
-    chrome.tabs.query({ url: 'https://teams.microsoft.com/*' }, (tabs) => {
+    chrome.tabs.query({ url: ['https://teams.microsoft.com/*', 'https://*.teams.microsoft.com/*'] }, (tabs) => {
       tabs.forEach(tab => {
         chrome.tabs.sendMessage(tab.id, {
           type: 'UPDATE_CONFIG',

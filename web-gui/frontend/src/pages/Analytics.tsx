@@ -24,13 +24,14 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { messagesApi } from '../services/api'
+import { format } from 'date-fns'
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8']
 
 export default function Analytics() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [statusData, setStatusData] = useState<any[]>([])
+  const [channelData, setChannelData] = useState<any[]>([])
   const [timelineData, setTimelineData] = useState<any[]>([])
   const [typeData, setTypeData] = useState<any[]>([])
 
@@ -41,51 +42,51 @@ export default function Analytics() {
   const loadAnalytics = async () => {
     try {
       setLoading(true)
-      const messages = await messagesApi.getMessages()
+      const { messages } = await messagesApi.getMessages()
 
-      // Status distribution
-      const statusCounts: Record<string, number> = {}
+      const channelCounts: Record<string, number> = {}
+      const typeCounts: Record<string, number> = {}
+      const timelineCounts: Record<string, number> = {}
+
       messages.forEach((msg) => {
-        statusCounts[msg.status] = (statusCounts[msg.status] || 0) + 1
+        const channel = msg.channel_name || msg.channel_id || 'Unknown'
+        channelCounts[channel] = (channelCounts[channel] || 0) + 1
+
+        const type = msg.type || 'message'
+        typeCounts[type] = (typeCounts[type] || 0) + 1
+
+        const sourceDate = msg.timestamp || msg.created_at
+        if (sourceDate) {
+          const dayKey = new Date(sourceDate).toISOString().slice(0, 10)
+          timelineCounts[dayKey] = (timelineCounts[dayKey] || 0) + 1
+        }
       })
-      setStatusData(
-        Object.entries(statusCounts).map(([name, value]) => ({ name, value }))
+
+      setChannelData(
+        Object.entries(channelCounts).map(([name, value]) => ({ name, value }))
       )
 
-      // Type distribution
-      const typeCounts: Record<string, number> = {}
-      messages.forEach((msg) => {
-        const type = msg.classification.type
-        typeCounts[type] = (typeCounts[type] || 0) + 1
-      })
       setTypeData(
         Object.entries(typeCounts).map(([name, value]) => ({ name, value }))
       )
 
-      // Timeline (last 7 days)
-      const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const last7Days = Array.from({ length: 7 }, (_, index) => {
         const date = new Date()
-        date.setDate(date.getDate() - (6 - i))
-        return date.toISOString().split('T')[0]
+        date.setDate(date.getDate() - (6 - index))
+        return date.toISOString().slice(0, 10)
       })
 
-      const timeline = last7Days.map((date) => {
-        const count = messages.filter((msg) =>
-          msg.created_at.startsWith(date)
-        ).length
-        return {
-          date: new Date(date).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-          }),
-          messages: count,
-        }
-      })
-      setTimelineData(timeline)
+      setTimelineData(
+        last7Days.map((date) => ({
+          date: format(new Date(date), 'MMM d'),
+          messages: timelineCounts[date] || 0,
+        }))
+      )
 
       setError(null)
-    } catch (err: any) {
-      setError(err.message || 'Failed to load analytics')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load analytics'
+      setError(message)
     } finally {
       setLoading(false)
     }
@@ -136,17 +137,17 @@ export default function Analytics() {
           </Card>
         </Grid>
 
-        {/* Status Distribution */}
+        {/* Channel Distribution */}
         <Grid item xs={12} md={6}>
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                Status Distribution
+                Messages by Channel
               </Typography>
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
                   <Pie
-                    data={statusData}
+                    data={channelData}
                     cx="50%"
                     cy="50%"
                     labelLine={false}
@@ -157,7 +158,7 @@ export default function Analytics() {
                     fill="#8884d8"
                     dataKey="value"
                   >
-                    {statusData.map((_, index) => (
+                    {channelData.map((_, index) => (
                       <Cell
                         key={`cell-${index}`}
                         fill={COLORS[index % COLORS.length]}
@@ -176,7 +177,7 @@ export default function Analytics() {
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>
-                Classification Types
+                Message Types
               </Typography>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={typeData}>

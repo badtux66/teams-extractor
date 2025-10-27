@@ -25,16 +25,82 @@
   let lastExtractTime = Date.now();
   let isExtracting = false;
 
-  // Teams DOM selectors (may need updates as Teams changes)
+  // Teams DOM selectors (updated for 2025 Teams UI)
   const SELECTORS = {
-    messageContainer: '[data-tid="messageBodyContent"]',
-    messageItem: '.ui-chat__item, [role="listitem"]',
-    messageText: '.ui-chat__messagecontent, [data-tid="messageBodyContent"]',
-    author: '[data-tid="message-author-name"], .ui-chat__message__author',
-    timestamp: 'time, [data-tid="message-timestamp"]',
-    channel: '[data-tid="channel-name"], .channel-header',
-    thread: '[data-tid="message-thread"]',
+    // More comprehensive selectors for different Teams views
+    messageContainer: [
+      '[data-tid="messageBodyContent"]',
+      '[class*="message-body"]',
+      '[role="log"]',
+      '[role="list"][aria-label*="message"]',
+      '.ts-message-list'
+    ],
+    messageItem: [
+      '[role="listitem"]',
+      '.ui-chat__item',
+      '[data-tid="chat-pane-item"]',
+      '[class*="message-item"]',
+      '[id^="message-"]'
+    ],
+    messageText: [
+      '[data-tid="messageBodyContent"]',
+      '.ui-chat__messagecontent',
+      '[class*="message-body-content"]',
+      'p[class*="message"]',
+      'div[class*="message-text"]'
+    ],
+    author: [
+      '[data-tid="message-author-name"]',
+      '.ui-chat__message__author',
+      '[class*="author-name"]',
+      '[aria-label*="said"]',
+      'span[class*="author"]'
+    ],
+    timestamp: [
+      'time',
+      '[data-tid="message-timestamp"]',
+      '[class*="timestamp"]',
+      'span[class*="time"]'
+    ],
+    channel: [
+      '[data-tid="channel-name"]',
+      '.channel-header',
+      'h2[class*="channel"]',
+      '[role="heading"]'
+    ],
+    thread: [
+      '[data-tid="message-thread"]',
+      '[class*="thread"]'
+    ],
   };
+
+  /**
+   * Query selector with multiple options
+   */
+  function querySelector(element, selectorArray) {
+    if (typeof selectorArray === 'string') {
+      return element.querySelector(selectorArray);
+    }
+    for (const selector of selectorArray) {
+      const el = element.querySelector(selector);
+      if (el) return el;
+    }
+    return null;
+  }
+
+  /**
+   * Query all with multiple options
+   */
+  function querySelectorAll(element, selectorArray) {
+    if (typeof selectorArray === 'string') {
+      return element.querySelectorAll(selectorArray);
+    }
+    for (const selector of selectorArray) {
+      const els = element.querySelectorAll(selector);
+      if (els.length > 0) return els;
+    }
+    return [];
+  }
 
   /**
    * Extract message data from DOM element
@@ -42,18 +108,45 @@
   function extractMessageData(element) {
     try {
       const messageId = element.getAttribute('id') || generateId();
-      const textElement = element.querySelector(SELECTORS.messageText);
-      const authorElement = element.querySelector(SELECTORS.author);
-      const timestampElement = element.querySelector(SELECTORS.timestamp);
+      const textElement = querySelector(element, SELECTORS.messageText);
+      const authorElement = querySelector(element, SELECTORS.author);
+      const timestampElement = querySelector(element, SELECTORS.timestamp);
 
-      if (!textElement || !authorElement) {
+      // Log extraction attempt for debugging
+      console.log('Extracting message:', {
+        hasText: !!textElement,
+        hasAuthor: !!authorElement,
+        hasTimestamp: !!timestampElement,
+        text: textElement?.textContent.substring(0, 50),
+        author: authorElement?.textContent
+      });
+
+      if (!textElement) {
+        console.log('No text element found, trying alternate extraction');
+        // Try to get text from any child elements
+        const textContent = element.textContent.trim();
+        if (textContent.length < 10) {
+          return null; // Too short to be a real message
+        }
+      }
+
+      if (!authorElement) {
+        console.log('No author element found in message');
+        // Some system messages don't have authors
+      }
+
+      const text = textElement ? textElement.textContent.trim() : element.textContent.trim();
+      const author = authorElement ? authorElement.textContent.trim() : 'Unknown';
+
+      // Skip empty or very short messages
+      if (text.length < 5) {
         return null;
       }
 
       const message = {
         id: messageId,
-        text: textElement.textContent.trim(),
-        author: authorElement.textContent.trim(),
+        text: text,
+        author: author,
         timestamp: timestampElement
           ? timestampElement.getAttribute('datetime') || timestampElement.textContent
           : new Date().toISOString(),
@@ -64,7 +157,7 @@
       };
 
       // Extract thread information if available
-      const threadElement = element.closest(SELECTORS.thread);
+      const threadElement = element.closest(SELECTORS.thread.join(','));
       if (threadElement) {
         message.threadId = threadElement.getAttribute('data-tid') || null;
       }
@@ -77,7 +170,7 @@
 
       return message;
     } catch (error) {
-      console.error('Error extracting message:', error);
+      console.error('Error extracting message:', error, element);
       return null;
     }
   }
@@ -86,7 +179,7 @@
    * Extract channel/chat name from page
    */
   function extractChannelName() {
-    const channelElement = document.querySelector(SELECTORS.channel);
+    const channelElement = querySelector(document, SELECTORS.channel);
     return channelElement ? channelElement.textContent.trim() : 'Unknown';
   }
 
@@ -132,6 +225,7 @@
    */
   function extractVisibleMessages() {
     if (!config.enabled || isExtracting) {
+      console.log('Extraction skipped:', { enabled: config.enabled, isExtracting });
       return;
     }
 
@@ -139,10 +233,24 @@
     const messages = [];
 
     try {
-      // Find all message elements
-      const messageElements = document.querySelectorAll(SELECTORS.messageItem);
+      // Find all message elements using flexible selectors
+      const messageElements = querySelectorAll(document, SELECTORS.messageItem);
 
-      console.log(`Found ${messageElements.length} message elements`);
+      console.log(`[Teams Extractor] Found ${messageElements.length} message elements`);
+      console.log(`[Teams Extractor] Current URL: ${window.location.href}`);
+      console.log(`[Teams Extractor] Channel: ${extractChannelName()}`);
+
+      // If no messages found, log the page structure for debugging
+      if (messageElements.length === 0) {
+        console.warn('[Teams Extractor] No messages found! Debugging info:');
+        console.log('- Document body classes:', document.body.className);
+        console.log('- Role=listitem count:', document.querySelectorAll('[role="listitem"]').length);
+        console.log('- Any divs with "message":', document.querySelectorAll('[class*="message"]').length);
+
+        // Try to find any potential message containers
+        const potentialContainers = document.querySelectorAll('[role="list"], [role="log"], [class*="message"]');
+        console.log(`- Found ${potentialContainers.length} potential message containers`);
+      }
 
       messageElements.forEach(element => {
         // Skip if already processed (check data attribute)
@@ -158,16 +266,19 @@
       });
 
       if (messages.length > 0) {
-        console.log(`Extracted ${messages.length} new messages`);
+        console.log(`[Teams Extractor] ✓ Extracted ${messages.length} new messages`);
+        console.log('Sample message:', messages[0]);
         messageQueue.push(...messages);
 
         // Send batch if queue is large enough
         if (messageQueue.length >= config.batchSize) {
           sendMessages();
         }
+      } else {
+        console.log('[Teams Extractor] No new messages to extract');
       }
     } catch (error) {
-      console.error('Error extracting messages:', error);
+      console.error('[Teams Extractor] Error extracting messages:', error);
     } finally {
       isExtracting = false;
     }
@@ -319,30 +430,47 @@
    * Initialize extraction
    */
   function initialize() {
-    console.log('Initializing Teams Message Extractor');
+    console.log('[Teams Extractor] Initializing Teams Message Extractor v1.0.1');
+    console.log('[Teams Extractor] URL:', window.location.href);
+
+    let attempts = 0;
+    const maxAttempts = 30;
 
     // Wait for Teams to load
     const checkTeamsLoaded = setInterval(() => {
-      if (document.querySelector(SELECTORS.messageContainer)) {
+      attempts++;
+      const container = querySelector(document, SELECTORS.messageContainer);
+
+      if (container) {
         clearInterval(checkTeamsLoaded);
-        console.log('Teams loaded, starting extraction');
+        console.log('[Teams Extractor] ✓ Teams loaded, starting extraction');
 
         // Initial extraction
-        extractVisibleMessages();
+        setTimeout(() => extractVisibleMessages(), 2000); // Wait 2s for content to render
 
         // Setup observers and timers
         setupMutationObserver();
         setupPeriodicExtraction();
 
-        // Notify background script
-        chrome.runtime.sendMessage({ type: 'EXTRACTOR_READY' });
+        notifyReady();
+      } else {
+        console.log(`[Teams Extractor] Waiting for Teams to load... (attempt ${attempts}/${maxAttempts})`);
+        if (attempts >= maxAttempts) {
+          clearInterval(checkTeamsLoaded);
+          console.warn('[Teams Extractor] Timeout: Could not detect Teams messages container');
+          console.warn('[Teams Extractor] Page may not be fully loaded or selectors need updating');
+
+          // Still setup listeners in case Teams loads later
+          setupMutationObserver();
+          setupPeriodicExtraction();
+          notifyReady();
+        }
       }
     }, 1000);
+  }
 
-    // Timeout after 30 seconds
-    setTimeout(() => {
-      clearInterval(checkTeamsLoaded);
-    }, 30000);
+  function notifyReady() {
+    chrome.runtime.sendMessage({ type: 'EXTRACTOR_READY' }, () => chrome.runtime.lastError);
   }
 
   // Start when DOM is ready

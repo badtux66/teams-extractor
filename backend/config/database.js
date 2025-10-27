@@ -1,13 +1,43 @@
 const { Pool } = require('pg');
 const logger = require('./logger');
 
+function parseBool(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return false;
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
+
+function shouldUseSSL() {
+  if (process.env.DATABASE_SSL) {
+    return parseBool(process.env.DATABASE_SSL);
+  }
+
+  if (process.env.PGSSLMODE) {
+    const mode = process.env.PGSSLMODE.toLowerCase();
+    return !['disable', 'allow', 'prefer'].includes(mode);
+  }
+
+  return process.env.NODE_ENV === 'production';
+}
+
+const sslEnabled = shouldUseSSL();
+const sslConfig = sslEnabled
+  ? {
+      rejectUnauthorized: !parseBool(
+        process.env.DATABASE_SSL_REJECT_UNAUTHORIZED ?? 'false'
+      ),
+    }
+  : false;
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  ssl: sslConfig,
 });
+
+logger.info(`PostgreSQL SSL ${sslEnabled ? 'enabled' : 'disabled'}`);
 
 // Connection event handlers
 pool.on('connect', () => {

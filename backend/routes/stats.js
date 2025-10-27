@@ -151,7 +151,11 @@ router.get('/', cacheMiddleware('stats:dashboard', 60), async (req, res) => {
     // Average messages per day
     const avgPerDayResult = await query(`
       SELECT
-        ROUND(COUNT(*)::numeric / GREATEST(DATE_PART('day', NOW() - MIN(timestamp)), 1), 2) as avg
+        ROUND(
+          COUNT(*)::numeric /
+          GREATEST(DATE_PART('day', NOW() - MIN(timestamp))::numeric, 1),
+          2
+        ) as avg
       FROM teams.messages
     `);
     stats.avgMessagesPerDay = parseFloat(avgPerDayResult.rows[0].avg || 0);

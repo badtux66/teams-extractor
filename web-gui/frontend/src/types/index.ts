@@ -1,24 +1,20 @@
 export interface Message {
-  id: number
+  id: number | string
   message_id: string | null
-  channel: string
-  author: string
+  channel_id: string | null
+  channel_name: string | null
+  content: string
+  sender_id: string | null
+  sender_name: string | null
+  sender_email: string | null
   timestamp: string | null
-  classification: {
-    type: string
-    keyword: string
-  }
-  resolution_text: string
-  quoted_request: {
-    author: string
-    text: string
-  } | null
-  permalink: string | null
-  status: string
-  jira_payload: JiraPayload | null
-  n8n_response_code: number | null
-  n8n_response_body: string | null
-  error: string | null
+  url: string | null
+  type: string
+  thread_id: string | null
+  attachments?: unknown[] | null
+  reactions: unknown[] | null
+  metadata?: Record<string, unknown> | null
+  extracted_at?: string | null
   created_at: string
   updated_at: string
 }
