@@ -174,6 +174,33 @@
   }
 
   /**
+   * Transform message to backend API format
+   */
+  function transformMessage(msg) {
+    return {
+      messageId: msg.id,
+      channelId: msg.channelId || null,
+      channelName: msg.channel || null,
+      content: msg.text,
+      sender: {
+        id: msg.authorId || null,
+        name: msg.author,
+        email: msg.authorEmail || null
+      },
+      timestamp: msg.timestamp,
+      url: msg.url,
+      type: msg.type || 'message',
+      threadId: msg.threadId || null,
+      attachments: msg.attachments || [],
+      reactions: msg.reactions || [],
+      metadata: {
+        extractedAt: msg.extractedAt,
+        source: 'chrome-extension'
+      }
+    };
+  }
+
+  /**
    * Send messages to backend
    */
   async function sendMessages() {
@@ -183,25 +210,47 @@
 
     const batch = messageQueue.splice(0, config.batchSize);
 
+    // Transform messages to backend format
+    const transformedMessages = batch.map(transformMessage);
+
+    // Get or create extraction ID
+    let extractionId = sessionStorage.getItem('extractionId');
+    if (!extractionId) {
+      extractionId = generateId();
+      sessionStorage.setItem('extractionId', extractionId);
+    }
+
     try {
       const response = await fetch(`${config.apiUrl}/messages/batch`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ messages: batch }),
+        body: JSON.stringify({
+          messages: transformedMessages,
+          extractionId: extractionId,
+          metadata: {
+            userAgent: navigator.userAgent,
+            teamsUrl: window.location.href,
+            timestamp: new Date().toISOString()
+          }
+        }),
       });
 
       if (response.ok) {
-        console.log(`Successfully sent ${batch.length} messages`);
+        const result = await response.json();
+        console.log(`Successfully sent ${batch.length} messages:`, result);
 
         // Notify background script
         chrome.runtime.sendMessage({
           type: 'MESSAGES_SENT',
-          count: batch.length
+          count: batch.length,
+          inserted: result.inserted,
+          duplicates: result.duplicates
         });
       } else {
-        console.error('Failed to send messages:', response.statusText);
+        const errorText = await response.text();
+        console.error('Failed to send messages:', response.statusText, errorText);
         // Re-add to queue for retry
         messageQueue.unshift(...batch);
       }

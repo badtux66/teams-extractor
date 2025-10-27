@@ -1,34 +1,54 @@
-# Teams Message Extractor with Web GUI
+# Teams Message Extractor
 
-A comprehensive automation system that captures Microsoft Teams messages, processes them with AI, and creates Jira issues automatically. Includes a modern web-based GUI for monitoring, management, and analytics.
+A modern, scalable system for extracting and analyzing Microsoft Teams messages using Chrome extension technology, with Claude Desktop MCP integration for intelligent querying and analysis.
 
 ## 🚀 Features
 
-- **Web-Based Dashboard** - Modern React UI for monitoring and managing your automation
-- **Real-Time Processing** - Automatic message extraction and Jira issue creation
-- **AI-Powered Analysis** - Uses OpenAI to enrich and classify messages
-- **Analytics & Reporting** - Visualize trends and track performance
-- **Easy Deployment** - Docker Compose for one-command setup
-- **Flexible Integration** - Works with n8n, Jira, and Teams
+- **Chrome Extension** - Seamless Teams message extraction via DOM scraping (no API permissions required)
+- **Web-Based Dashboard** - Modern React UI for monitoring and analytics
+- **Real-Time Updates** - WebSocket-powered live message feed
+- **PostgreSQL Storage** - Scalable database with full-text search
+- **Redis Caching** - High-performance deduplication and caching
+- **Claude MCP Integration** - Query and analyze messages directly from Claude Desktop
+- **Docker Deployment** - One-command setup with Docker Compose
+- **RESTful API** - Comprehensive API for programmatic access
 
-## 📦 Components
+## 📦 Architecture
 
-- `web-gui/` – Modern React frontend with Material-UI and real-time dashboard
-- `extension/` – Manifest v3 extension that watches the Teams web client
-- `processor/server.py` – FastAPI service with REST API for GUI integration
-- `mcp/agent.py` & `mcp/teams_agent.py` – AI-powered message processing
-- `n8n/workflows/` – n8n workflow templates for Jira integration
-- `docs/` – Comprehensive documentation
+```
+┌─────────────────┐     ┌──────────────┐     ┌─────────────┐
+│  Teams Website  │────▶│   Chrome     │────▶│   Backend   │
+│ (teams.ms.com)  │     │  Extension   │     │  (Node.js)  │
+└─────────────────┘     └──────────────┘     └──────┬──────┘
+                                                     │
+                                           ┌─────────┼──────────┐
+                                           ▼         ▼          ▼
+                                    ┌──────────┐ ┌──────┐ ┌─────────┐
+                                    │PostgreSQL│ │Redis │ │Frontend │
+                                    └──────────┘ └──────┘ └─────────┘
+                                           ▲
+                                           │
+                                    ┌──────┴──────┐
+                                    │ MCP Server  │
+                                    │  (Claude)   │
+                                    └─────────────┘
+```
+
+## 📂 Components
+
+- **`chrome-extension/`** – Manifest V3 Chrome extension for message extraction
+- **`backend/`** – Node.js/Express API server with PostgreSQL and Redis
+- **`web-gui/`** – React frontend with Material-UI dashboard
+- **`mcp-server/`** – Claude Desktop MCP server for AI-powered queries
+- **`init-scripts/`** – PostgreSQL initialization and schema
+- **`docs/`** – Comprehensive documentation
 
 ## 🔧 Prerequisites
 
-- **Docker & Docker Compose** (recommended) OR:
-  - Python 3.10+ for backend
-  - Node.js 18+ for frontend
-- Chrome/Edge browser (Manifest v3 compatible)
+- **Docker & Docker Compose** (recommended for full stack deployment)
+- Chrome/Edge browser (Manifest V3 compatible)
 - Access to Microsoft Teams web client (https://teams.microsoft.com)
-- OpenAI API key
-- n8n Cloud workspace (or self-hosted) with Jira credentials configured
+- Claude Desktop (optional, for MCP integration)
 
 ## 🚀 Quick Start with Docker
 
@@ -41,107 +61,125 @@ cd teams-extractor
 
 # 2. Configure environment variables
 cp .env.example .env
-# Edit .env and add your API keys
+# Edit .env with your configuration (PostgreSQL credentials, ports, etc.)
 
-# 3. Start everything with Docker Compose
+# 3. Start all services with Docker Compose
 docker-compose up -d
 
 # 4. Access the web interface
 open http://localhost:3000
 ```
 
-The Web GUI will be available at `http://localhost:3000` and the API at `http://localhost:8090`.
+Services will be available at:
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:5000
+- **PostgreSQL**: localhost:5432
+- **Redis**: localhost:6379
 
 ## 🖥️ Web GUI Features
 
 ### Dashboard
 - Real-time system health monitoring
-- Message processing statistics
+- Message extraction statistics
 - Today's and weekly activity metrics
-- n8n connection status
+- Live WebSocket updates
+- Database and Redis connection status
 
 ### Message Viewer
-- Browse all processed messages
-- Filter by status, author, channel, or date
-- Search messages with full-text search
+- Browse all extracted messages
+- Filter by channel, sender, or date range
+- Full-text search with PostgreSQL
 - View detailed message information
-- Retry failed messages
+- Pagination and sorting
 - Export data
 
 ### Analytics
 - Visual charts and graphs
-- Status distribution (pie charts)
-- Timeline trends (line charts)
-- Classification type breakdown
+- Channel activity breakdown
+- Sender statistics
+- Timeline trends (daily/weekly/monthly)
+- Message type distribution
 
 ### Settings
-- Configure OpenAI API key
-- Set n8n webhook URL
-- Manage processing options
-- Auto-retry configuration
+- Configure extraction intervals
+- Manage Chrome extension settings
+- System configuration
+- API endpoint management
 
 ## 📖 Manual Setup (Without Docker)
 
-### 1. Install Backend Dependencies
+### 1. Setup PostgreSQL and Redis
 ```bash
-# Create and activate virtual environment
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+# Install PostgreSQL and Redis on your system
+# For Ubuntu/Debian:
+sudo apt-get install postgresql postgresql-contrib redis-server
 
-# Install Python dependencies
-pip install -r mcp/requirements.txt
+# Create database and user
+sudo -u postgres psql
+CREATE DATABASE teams_extractor;
+CREATE USER teams_admin WITH PASSWORD 'your_password';
+GRANT ALL PRIVILEGES ON DATABASE teams_extractor TO teams_admin;
+\q
+
+# Run initialization script
+psql -U teams_admin -d teams_extractor -f init-scripts/01-init.sql
 ```
 
-### 2. Install Frontend Dependencies
+### 2. Install Backend Dependencies
+```bash
+cd backend
+npm install
+cd ..
+```
+
+### 3. Install Frontend Dependencies
 ```bash
 cd web-gui/frontend
 npm install
 cd ../..
 ```
 
-### 3. Run the Backend
+### 4. Configure Environment
 ```bash
-export OPENAI_API_KEY=sk-...
-export N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/teams-guncelleme
-export N8N_API_KEY=my-shared-secret  # optional
-python -m processor.server
+cp .env.example .env
+# Edit .env with your PostgreSQL and Redis credentials
 ```
 
-The backend API listens on `http://localhost:8090` by default.
+### 5. Run the Backend
+```bash
+cd backend
+DATABASE_URL=postgresql://teams_admin:your_password@localhost:5432/teams_extractor \
+REDIS_HOST=localhost \
+PORT=5000 \
+node server.js
+```
 
-### 4. Run the Frontend
+The backend API listens on `http://localhost:5000`.
+
+### 6. Run the Frontend
 ```bash
 cd web-gui/frontend
-npm run dev
+REACT_APP_API_URL=http://localhost:5000/api npm run dev
 ```
 
 The web GUI will be available at `http://localhost:3000`.
 
-### 5. Import the n8n Workflow
-1. In n8n, go to **Workflows → Import from File** and select `n8n/workflows/jira-teams.json`.
-2. Set the webhook path if you want a custom slug (defaults to `/webhook/teams-guncelleme`).
-3. Bind Jira credentials on the **Create Jira Issue** node.
-4. Update the Function node with your Jira custom field IDs or default project key.
-5. Activate the workflow and copy the live webhook URL (use it in `N8N_WEBHOOK_URL`).
+### 7. Load the Chrome Extension
+1. Open `chrome://extensions`, enable **Developer mode**, and click **Load unpacked**
+2. Select the `chrome-extension/` folder
+3. Click the extension icon and configure:
+   - API URL: `http://localhost:5000/api`
+   - Batch Size: `50` (default)
+   - Extraction Interval: `5000ms` (5 seconds)
+4. Save the settings
 
-### 6. Load the Browser Extension
-1. Open `chrome://extensions`, enable **Developer mode**, and choose **Load unpacked**.
-2. Select the `extension/` folder.
-3. Open the extension options page:
-   - Paste the Processor URL, e.g., `http://localhost:8090/ingest`.
-   - Set the optional API key if you protected the processor with `X-API-Key`.
-   - Enter your Teams display name (only your messages are processed).
-   - Leave `Channel Name` as `Güncelleme Planlama` or adjust if you use multiple rooms.
-   - Adjust keywords if you have additional confirmation phrases.
-4. Save the settings.
-
-### 7. Test the System
-1. Post a test request and reply with `Güncellendi` in the `Güncelleme Planlama` channel.
-2. Watch the extension logs (`chrome://extensions → Inspect views`) to confirm the message is captured and sent to the processor.
-3. Check the **Web GUI Dashboard** at `http://localhost:3000` to see the message being processed.
-4. In the **Messages** page, view the stored record and Jira payload.
-5. In n8n, inspect the execution to ensure the issue was created with the supplied payload.
-6. Verify the Jira issue summary/description look correct.
+### 8. Test the System
+1. Open Microsoft Teams in your browser (https://teams.microsoft.com)
+2. Navigate to any channel or chat
+3. The extension will automatically start extracting visible messages
+4. Check the extension popup to see extraction status
+5. View extracted messages in the Web GUI at `http://localhost:3000`
+6. Use the dashboard to monitor real-time statistics
 
 ## 📚 Documentation
 
@@ -153,19 +191,32 @@ The web GUI will be available at `http://localhost:3000`.
 
 ## 🔌 API Endpoints
 
-The backend exposes a RESTful API:
+The backend exposes a comprehensive RESTful API:
 
-- `GET /health` - System health check
-- `GET /stats` - Get statistics
-- `GET /messages` - List all messages (with filters)
-- `GET /messages/{id}` - Get message details
-- `POST /messages/{id}/retry` - Retry failed message
-- `DELETE /messages/{id}` - Delete message
-- `GET /config` - Get configuration
-- `PUT /config` - Update configuration
-- `POST /ingest` - Ingest new message (used by extension)
+**Message Management:**
+- `POST /api/messages/batch` - Bulk message ingestion (used by Chrome extension)
+- `GET /api/messages` - List messages with filtering and pagination
+- `GET /api/messages/:id` - Get single message details
+- `GET /api/messages/search` - Full-text search messages
+- `DELETE /api/messages/:id` - Delete message
 
-Full API documentation available at `http://localhost:8090/docs` (OpenAPI/Swagger).
+**Statistics & Analytics:**
+- `GET /api/stats` - Comprehensive dashboard statistics
+- `GET /api/stats/channels` - Channel-level analytics
+- `GET /api/stats/senders` - Sender-level analytics
+- `GET /api/stats/timeline` - Time-series message data
+
+**Health & Monitoring:**
+- `GET /api/health` - Comprehensive health check
+- `GET /api/health/ready` - Readiness probe
+- `GET /api/health/live` - Liveness probe
+- `GET /api/health/metrics` - Prometheus metrics
+
+**Extraction Management:**
+- `POST /api/extraction/trigger` - Manually trigger extraction
+- `GET /api/extraction/sessions` - List extraction sessions
+- `GET /api/extraction/active` - Get active session
+- `PATCH /api/extraction/sessions/:id` - Update session status
 
 ## 🐳 Docker Commands
 
@@ -189,17 +240,22 @@ docker-compose logs -f backend
 docker-compose logs -f frontend
 ```
 
-## Customisation Tips
-- Update DOM selectors inside `extension/contentScript.js` if Microsoft changes the Teams markup. The selectors are grouped at the top of the file.
-- Extend the MCP prompt or default field mapping in `mcp/agent.py` / `processor/server.py` to match your Jira taxonomy.
-- Add extra validation in n8n (for example, prevent duplicate creation by checking Jira for an existing summary before creating a new issue).
-- Use the SQLite database for analytics or to replay messages into Jira.
+## ⚙️ Customization Tips
 
-## Logging & Monitoring
-- Extension retries failed processor calls every minute and logs to the service worker console.
-- The processor exposes `/health` (model + n8n connectivity) and stores every message with status transitions.
-- The Web GUI provides real-time dashboard monitoring with visual analytics.
-- n8n provides execution history – enable Slack or email alerts on failure runs.
+- **DOM Selectors**: Update selectors in `chrome-extension/content.js` if Microsoft changes Teams markup
+- **Extraction Interval**: Adjust `EXTENSION_INTERVAL` in .env for more/less frequent extraction
+- **Batch Size**: Modify `EXTENSION_BATCH_SIZE` to change how many messages are sent per request
+- **Database Schema**: Extend PostgreSQL schema in `init-scripts/01-init.sql` for custom fields
+- **MCP Queries**: Customize MCP server handlers in `mcp-server/` for specific use cases
+
+## 📊 Logging & Monitoring
+
+- **Chrome Extension**: Logs to browser console (chrome://extensions → Inspect views)
+- **Backend**: Structured logging with Winston (logs/ directory)
+- **Health Checks**: Multiple endpoints for Kubernetes/Docker orchestration
+- **Prometheus**: Metrics endpoint at `/api/health/metrics`
+- **WebSocket**: Real-time status updates to frontend dashboard
+- **Database Metrics**: Connection pool and query performance tracking
 
 ## 🎨 Technology Stack
 
@@ -209,25 +265,39 @@ docker-compose logs -f frontend
 - Recharts for data visualization
 - Zustand for state management
 - Vite for fast development
+- Axios for API communication
 
 **Backend:**
-- FastAPI (Python)
-- SQLite for message storage
-- OpenAI for AI processing
-- httpx for async HTTP
+- Node.js 20 with Express
+- PostgreSQL 15 for storage
+- Redis for caching and deduplication
+- Socket.io for WebSocket support
+- Joi for validation
+- Winston for structured logging
+
+**Chrome Extension:**
+- Manifest V3
+- Content scripts for DOM scraping
+- Background service worker
+- Chrome Storage API
 
 **DevOps:**
 - Docker & Docker Compose
-- Nginx for frontend serving
-- Multi-stage builds for optimization
+- Multi-stage Dockerfile builds
+- Health check scripts
+- Nginx reverse proxy (optional)
+- PostgreSQL and Redis containers
 
 ## 🔒 Security Considerations
 
-- All API keys stored in environment variables or config files (not in code)
-- CORS configured for frontend-backend communication
-- Optional API key authentication for processor endpoints
-- Nginx reverse proxy for production deployment
-- No sensitive data exposed in logs
+- **Non-root Containers**: All Docker containers run as non-root users
+- **Environment Variables**: Sensitive data stored in .env files (never committed)
+- **CORS**: Properly configured for frontend-backend communication
+- **Helmet**: HTTP security headers middleware
+- **SQL Injection Protection**: Parameterized queries throughout
+- **Input Validation**: Comprehensive Joi schemas for all API endpoints
+- **Health Checks**: Separate readiness and liveness probes
+- **Redis Password**: Optional password protection for Redis
 
 ## 🆘 Support
 
@@ -236,13 +306,18 @@ For issues and questions:
 - Open an issue on GitHub
 - Contact the development team
 
-## 🎯 Next Steps
+## 🎯 Roadmap
 
-- Add authentication and user management to the web GUI
-- Implement WebSocket for real-time updates
-- Add Teams bot integration for bidirectional communication
-- Export data to multiple formats (CSV, Excel, JSON)
-- Implement advanced analytics and custom reports
-- Add email notifications for failed messages
-- Create mobile-responsive progressive web app (PWA)
-- Package the extension (crx) and distribute internally via Group Policy or the Chrome Web Store private listing
+- [x] Chrome extension for seamless Teams message extraction
+- [x] PostgreSQL with full-text search
+- [x] Redis caching and deduplication
+- [x] WebSocket for real-time updates
+- [x] Comprehensive REST API
+- [ ] Claude Desktop MCP server integration
+- [ ] Authentication and user management
+- [ ] Advanced analytics and custom reports
+- [ ] Export data to multiple formats (CSV, Excel, JSON)
+- [ ] Email notifications for important events
+- [ ] Mobile-responsive PWA
+- [ ] Teams bot integration for bidirectional communication
+- [ ] Enterprise deployment with SSO
