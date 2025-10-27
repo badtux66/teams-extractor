@@ -30,8 +30,8 @@ RUN apk add --no-cache \
     tini
 
 # Create non-root user
-RUN addgroup -g 1000 appgroup && \
-    adduser -D -u 1000 -G appgroup appuser
+RUN addgroup -g 1002 appgroup && \
+    adduser -D -u 1002 -G appgroup appuser
 
 # Set working directory
 WORKDIR /app

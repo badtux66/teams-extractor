@@ -16,7 +16,6 @@ import {
   TrendingUp,
 } from '@mui/icons-material'
 import { messagesApi, healthApi } from '../services/api'
-import { useStore } from '../store/useStore'
 import type { Stats, HealthStatus } from '../types'
 
 export default function Dashboard() {

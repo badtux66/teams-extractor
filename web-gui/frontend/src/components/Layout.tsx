@@ -12,8 +12,8 @@ import {
   ListItemText,
   Toolbar,
   Typography,
-  useTheme,
 } from '@mui/material'
+
 import {
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
@@ -33,7 +33,6 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
-  const theme = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
   const { darkMode, toggleDarkMode } = useStore()

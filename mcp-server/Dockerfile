@@ -8,8 +8,8 @@ FROM node:20-alpine
 RUN apk add --no-cache curl
 
 # Create non-root user
-RUN addgroup -g 1000 mcpgroup && \
-    adduser -D -u 1000 -G mcpgroup mcpuser
+RUN addgroup -g 1001 mcpgroup && \
+    adduser -D -u 1001 -G mcpgroup mcpuser
 
 WORKDIR /app
 
