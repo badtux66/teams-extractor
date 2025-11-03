@@ -8,6 +8,9 @@ let extractorState = {
   totalMessages: 0,
   lastSync: null,
   errors: [],
+  lastError: null,
+  retrying: false,
+  droppedMessages: 0,
 };
 
 // Configuration
@@ -33,20 +36,51 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       extractorState.isActive = true;
       extractorState.lastSync = new Date().toISOString();
       updateBadge('✓', 'green');
+      console.log('Extractor is ready and active');
       break;
 
     case 'MESSAGES_SENT':
       extractorState.totalMessages += message.count;
       extractorState.lastSync = new Date().toISOString();
+      extractorState.lastError = null; // Clear error on success
+      extractorState.retrying = false;
       updateBadge(extractorState.totalMessages.toString(), 'blue');
+      console.log(`✅ Sent ${message.count} messages. Total: ${extractorState.totalMessages}`);
       break;
 
     case 'EXTRACTION_ERROR':
-      extractorState.errors.push({
+      extractorState.lastError = {
         timestamp: new Date().toISOString(),
-        error: message.error
-      });
-      updateBadge('!', 'red');
+        error: message.error,
+        retrying: message.retrying || false,
+        retryCount: message.retryCount || 0
+      };
+      extractorState.retrying = message.retrying || false;
+
+      // Track dropped messages
+      if (message.dropped) {
+        extractorState.droppedMessages += message.dropped;
+      }
+
+      // Only add to errors array if it's a permanent failure
+      if (!message.retrying) {
+        extractorState.errors.push({
+          timestamp: new Date().toISOString(),
+          error: message.error
+        });
+        // Keep only last 10 errors
+        if (extractorState.errors.length > 10) {
+          extractorState.errors = extractorState.errors.slice(-10);
+        }
+      }
+
+      // Update badge based on retry status
+      if (message.retrying) {
+        updateBadge('⏰', 'orange');
+      } else {
+        updateBadge('!', 'red');
+      }
+      console.error('Extraction error:', message);
       break;
 
     case 'GET_STATE':
@@ -66,7 +100,8 @@ function updateBadge(text, color) {
   chrome.action.setBadgeBackgroundColor({
     color: color === 'green' ? '#4CAF50' :
            color === 'blue' ? '#2196F3' :
-           color === 'red' ? '#F44336' : '#9E9E9E'
+           color === 'red' ? '#F44336' :
+           color === 'orange' ? '#FF9800' : '#9E9E9E'
   });
 }
 

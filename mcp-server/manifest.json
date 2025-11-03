@@ -1,0 +1,210 @@
+{
+  "manifest_version": "1.0",
+  "name": "Teams Message Extractor",
+  "version": "1.0.0",
+  "description": "Query and search Microsoft Teams messages directly from Claude Desktop with powerful analysis tools",
+  "author": {
+    "name": "Teams Extractor",
+    "email": "support@teams-extractor.com"
+  },
+  "icon": "💬",
+  "mcp_version": "0.5.0",
+  "license": "MIT",
+  "homepage": "https://github.com/yourusername/teams-extractor",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/teams-extractor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/teams-extractor/issues"
+  },
+  "server": {
+    "command": "node",
+    "args": ["index.js"],
+    "connectionType": "stdio",
+    "env": {
+      "NODE_ENV": "production"
+    }
+  },
+  "tools": [
+    {
+      "name": "list_messages",
+      "description": "List Teams messages with filtering by channel, sender, date range, and more",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of messages to return (default: 10, max: 100)"
+          },
+          "channel": {
+            "type": "string",
+            "description": "Filter by channel name"
+          },
+          "sender": {
+            "type": "string",
+            "description": "Filter by sender name"
+          },
+          "startDate": {
+            "type": "string",
+            "description": "Start date in ISO format (e.g., 2024-01-01)"
+          },
+          "endDate": {
+            "type": "string",
+            "description": "End date in ISO format"
+          },
+          "orderBy": {
+            "type": "string",
+            "enum": ["timestamp", "sender", "channel"],
+            "description": "Field to order results by"
+          }
+        }
+      }
+    },
+    {
+      "name": "search_messages",
+      "description": "Full-text search across all Teams messages with powerful query capabilities",
+      "inputSchema": {
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query (supports AND, OR, NOT operators)"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum results (default: 10, max: 100)"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_statistics",
+      "description": "Get comprehensive statistics about Teams messages",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "number",
+            "description": "Number of days to analyze (default: 7)"
+          },
+          "groupBy": {
+            "type": "string",
+            "enum": ["channel", "sender", "day", "hour"],
+            "description": "How to group statistics"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_message",
+      "description": "Get detailed information about a specific message by ID",
+      "inputSchema": {
+        "type": "object",
+        "required": ["messageId"],
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": "The ID of the message to retrieve"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_channel_summary",
+      "description": "Get summary of activity in a specific channel",
+      "inputSchema": {
+        "type": "object",
+        "required": ["channel"],
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "Channel name to summarize"
+          },
+          "days": {
+            "type": "number",
+            "description": "Number of days to analyze (default: 7)"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_sender_activity",
+      "description": "Analyze activity patterns for specific senders",
+      "inputSchema": {
+        "type": "object",
+        "required": ["sender"],
+        "properties": {
+          "sender": {
+            "type": "string",
+            "description": "Sender name to analyze"
+          },
+          "days": {
+            "type": "number",
+            "description": "Number of days to analyze (default: 30)"
+          }
+        }
+      }
+    }
+  ],
+  "configuration": {
+    "required": ["databaseUrl"],
+    "properties": {
+      "databaseUrl": {
+        "type": "string",
+        "description": "PostgreSQL connection URL for Teams message database",
+        "format": "uri",
+        "example": "postgresql://user:password@localhost:5432/teams_extractor",
+        "sensitive": true
+      },
+      "maxResults": {
+        "type": "number",
+        "description": "Maximum results per query (default: 50)",
+        "default": 50,
+        "minimum": 1,
+        "maximum": 500
+      },
+      "timeout": {
+        "type": "number",
+        "description": "Query timeout in milliseconds",
+        "default": 30000
+      }
+    }
+  },
+  "requirements": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "installation": {
+    "steps": [
+      {
+        "type": "command",
+        "command": "npm install",
+        "description": "Installing dependencies..."
+      },
+      {
+        "type": "prompt",
+        "key": "databaseUrl",
+        "prompt": "Enter your PostgreSQL database URL",
+        "description": "Connection string for the Teams message database",
+        "validation": "^postgresql://.*$",
+        "sensitive": true
+      },
+      {
+        "type": "command",
+        "command": "node test-connection.js",
+        "description": "Testing database connection..."
+      }
+    ]
+  },
+  "tags": [
+    "teams",
+    "microsoft-teams",
+    "chat",
+    "messages",
+    "search",
+    "productivity",
+    "collaboration"
+  ]
+}

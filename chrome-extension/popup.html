@@ -102,16 +102,24 @@
     </div>
     <div class="status-item">
       <span class="status-label">Queue Size:</span>
-      <span class="status-value" id="queueSize">0</span>
+      <span class="status-value">
+        <span id="queueSize">0</span>
+        <span id="queueStatus" style="font-size: 12px; color: #6b7280;"></span>
+      </span>
     </div>
     <div class="status-item">
       <span class="status-label">Last Sync:</span>
       <span class="status-value" id="lastSync">Never</span>
     </div>
+    <div class="status-item" id="errorContainer" style="display: none;">
+      <span class="status-label">Error:</span>
+      <span class="status-value" id="errorText" style="color: #ef4444; font-size: 12px;"></span>
+    </div>
   </div>
 
   <div class="section">
     <button class="btn-primary" id="extractBtn">Extract Now</button>
+    <button class="btn-primary" id="forceFlushBtn" style="background-color: #f97316;">Force Flush Queue</button>
     <button class="btn-secondary" id="openGuiBtn">Open Dashboard</button>
   </div>
 

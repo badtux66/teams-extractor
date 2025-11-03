@@ -5,7 +5,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const statusText = document.getElementById('statusText');
   const messageCount = document.getElementById('messageCount');
   const queueSize = document.getElementById('queueSize');
+  const queueStatus = document.getElementById('queueStatus');
   const lastSync = document.getElementById('lastSync');
+  const errorContainer = document.getElementById('errorContainer');
+  const errorText = document.getElementById('errorText');
 
   // Load state
   await updateStatus();
@@ -21,6 +24,21 @@ document.addEventListener('DOMContentLoaded', async () => {
       chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_NOW' }, (response) => {
         if (response?.success) {
           showNotification('Extraction started');
+        }
+      });
+    } else {
+      alert('Please navigate to Teams web app first');
+    }
+  });
+
+  // Force flush button handler
+  document.getElementById('forceFlushBtn').addEventListener('click', async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    if (tab.url?.includes('teams.microsoft.com')) {
+      chrome.tabs.sendMessage(tab.id, { type: 'FORCE_FLUSH' }, (response) => {
+        if (response?.success) {
+          showNotification(`Force flush initiated. Queue: ${response.queueSize} messages`);
         }
       });
     } else {
@@ -51,34 +69,78 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Get state from background
       chrome.runtime.sendMessage({ type: 'GET_STATE' }, (state) => {
         if (state) {
-          // Update indicator
-          if (state.isActive) {
+          // Update indicator based on state
+          if (state.retrying) {
+            statusIndicator.className = 'indicator retrying';
+            statusIndicator.style.backgroundColor = '#FF9800';
+            statusText.textContent = 'Retrying...';
+          } else if (state.lastError && !state.retrying) {
+            statusIndicator.className = 'indicator error';
+            statusIndicator.style.backgroundColor = '#ef4444';
+            statusText.textContent = 'Error';
+          } else if (state.isActive) {
             statusIndicator.className = 'indicator active';
+            statusIndicator.style.backgroundColor = '#10b981';
             statusText.textContent = 'Active';
           } else {
             statusIndicator.className = 'indicator inactive';
+            statusIndicator.style.backgroundColor = '#ef4444';
             statusText.textContent = 'Inactive';
           }
 
           // Update counts
           messageCount.textContent = state.totalMessages.toLocaleString();
+          if (state.droppedMessages > 0) {
+            messageCount.textContent += ` (${state.droppedMessages} dropped)`;
+          }
 
           // Update last sync
           if (state.lastSync) {
             const date = new Date(state.lastSync);
             lastSync.textContent = formatTimeAgo(date);
           }
+
+          // Show error if present
+          if (state.lastError) {
+            errorContainer.style.display = 'block';
+            if (state.retrying) {
+              errorText.textContent = `Retrying... (attempt ${state.lastError.retryCount || 1})`;
+              errorText.style.color = '#f97316';
+            } else {
+              errorText.textContent = state.lastError.error.substring(0, 100);
+              errorText.style.color = '#ef4444';
+            }
+          } else {
+            errorContainer.style.display = 'none';
+          }
         }
       });
 
-      // Get queue size from active tab
+      // Get detailed queue status from active tab
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab?.url?.includes('teams.microsoft.com')) {
         chrome.tabs.sendMessage(tab.id, { type: 'GET_STATUS' }, (response) => {
           if (response) {
             queueSize.textContent = response.queueSize || 0;
+
+            // Add queue status indicator
+            if (response.isSending) {
+              queueStatus.textContent = ' (sending...)';
+              queueStatus.style.color = '#10b981';
+            } else if (response.retryCount > 0) {
+              queueStatus.textContent = ` (retry ${response.retryCount})`;
+              queueStatus.style.color = '#f97316';
+            } else if (response.queueSize > 0) {
+              queueStatus.textContent = ' (waiting)';
+              queueStatus.style.color = '#6b7280';
+            } else {
+              queueStatus.textContent = '';
+            }
           }
         });
+      } else {
+        queueSize.textContent = '-';
+        queueStatus.textContent = '';
       }
     } catch (error) {
       console.error('Error updating status:', error);

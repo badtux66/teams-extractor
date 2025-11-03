@@ -1,21 +1,84 @@
 {
-  "name": "teams-extractor-mcp-server",
+  "name": "@teams-extractor/mcp-server",
   "version": "1.0.0",
-  "description": "MCP server for querying Teams messages from Claude Desktop",
+  "description": "Query and search Microsoft Teams messages directly from Claude Desktop",
   "main": "index.js",
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "setup": "./setup-claude.sh",
+    "install-extension": "node install.js"
   },
   "keywords": [
     "mcp",
     "claude",
     "teams",
-    "messages"
+    "messages",
+    "microsoft-teams",
+    "chat",
+    "search"
   ],
-  "author": "",
+  "author": "Teams Extractor",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/teams-extractor"
+  },
+  "mcp": {
+    "name": "Teams Message Extractor",
+    "description": "Access and search Microsoft Teams messages with powerful query tools",
+    "icon": "💬",
+    "version": "1.0.0",
+    "capabilities": ["query", "search", "statistics", "analysis"],
+    "connectionType": "stdio",
+    "installCommand": "npm install && npm run install-extension",
+    "configSchema": {
+      "databaseUrl": {
+        "type": "string",
+        "description": "PostgreSQL connection URL (e.g., postgresql://localhost:5432/teams)",
+        "required": true,
+        "default": "postgresql://localhost:5432/teams_extractor"
+      },
+      "maxResults": {
+        "type": "number",
+        "description": "Maximum number of results to return per query",
+        "default": 50,
+        "minimum": 1,
+        "maximum": 500
+      }
+    },
+    "tools": [
+      {
+        "name": "list_messages",
+        "description": "List Teams messages with filtering options"
+      },
+      {
+        "name": "search_messages",
+        "description": "Full-text search across all Teams messages"
+      },
+      {
+        "name": "get_statistics",
+        "description": "Get comprehensive statistics about Teams messages"
+      },
+      {
+        "name": "get_message",
+        "description": "Get detailed information about a specific message"
+      },
+      {
+        "name": "get_channel_summary",
+        "description": "Get summary of activity in a specific channel"
+      },
+      {
+        "name": "get_sender_activity",
+        "description": "Analyze activity patterns for specific senders"
+      }
+    ],
+    "requirements": {
+      "node": ">=18.0.0",
+      "postgresql": ">=14.0"
+    }
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.5.0",
     "pg": "^8.11.3",
@@ -23,5 +86,8 @@
   },
   "devDependencies": {
     "@types/node": "^20.10.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

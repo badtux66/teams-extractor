@@ -24,6 +24,11 @@
   let messageQueue = [];
   let lastExtractTime = Date.now();
   let isExtracting = false;
+  let isSending = false;
+  let retryCount = 0;
+  let maxRetries = 5;
+  let retryDelay = 1000; // Start with 1 second
+  let extractedMessagesCount = 0;
 
   // Teams DOM selectors (updated for 2025 Teams UI)
   const SELECTORS = {
@@ -312,14 +317,17 @@
   }
 
   /**
-   * Send messages to backend
+   * Send messages to backend with retry logic
    */
   async function sendMessages() {
-    if (messageQueue.length === 0) {
+    if (messageQueue.length === 0 || isSending) {
       return;
     }
 
+    isSending = true;
     const batch = messageQueue.splice(0, config.batchSize);
+
+    console.log(`[Teams Extractor] Attempting to send ${batch.length} messages to backend...`);
 
     // Transform messages to backend format
     const transformedMessages = batch.map(transformMessage);
@@ -350,25 +358,107 @@
 
       if (response.ok) {
         const result = await response.json();
-        console.log(`Successfully sent ${batch.length} messages:`, result);
+        console.log(`✅ Successfully sent ${batch.length} messages:`, result);
+
+        // Update local counter
+        extractedMessagesCount += batch.length;
+        retryCount = 0; // Reset retry count on success
+        retryDelay = 1000; // Reset delay
 
         // Notify background script
         chrome.runtime.sendMessage({
           type: 'MESSAGES_SENT',
           count: batch.length,
-          inserted: result.inserted,
-          duplicates: result.duplicates
+          inserted: result.inserted || batch.length,
+          duplicates: result.duplicates || 0,
+          totalExtracted: extractedMessagesCount
         });
+
+        // Send remaining messages if any
+        if (messageQueue.length > 0) {
+          setTimeout(() => sendMessages(), 100);
+        }
       } else {
         const errorText = await response.text();
-        console.error('Failed to send messages:', response.statusText, errorText);
+        console.error(`❌ Failed to send messages (${response.status}):`, response.statusText, errorText);
+
         // Re-add to queue for retry
         messageQueue.unshift(...batch);
+        handleSendFailure(batch, `HTTP ${response.status}: ${response.statusText}`);
       }
     } catch (error) {
-      console.error('Error sending messages:', error);
+      console.error('❌ Network error sending messages:', error);
+
+      // Check if it's a CORS error
+      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        console.error(`
+🔧 BACKEND CONNECTION ISSUE DETECTED!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The extension cannot reach the backend at: ${config.apiUrl}
+
+Possible causes:
+1. Backend server is not running
+   → Start it with: docker-compose up -d
+
+2. Wrong API URL configured
+   → Check extension settings
+
+3. CORS not properly configured
+   → Backend should allow origin: chrome-extension://*
+
+Current queue size: ${messageQueue.length + batch.length} messages waiting
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        `);
+      }
+
       // Re-add to queue for retry
       messageQueue.unshift(...batch);
+      handleSendFailure(batch, error.message);
+    } finally {
+      isSending = false;
+    }
+  }
+
+  /**
+   * Handle send failure with exponential backoff
+   */
+  function handleSendFailure(batch, errorDetails) {
+    retryCount++;
+
+    if (retryCount <= maxRetries) {
+      console.log(`⏰ Will retry in ${retryDelay / 1000} seconds (attempt ${retryCount}/${maxRetries})`);
+
+      // Notify background about the error but with retry pending
+      chrome.runtime.sendMessage({
+        type: 'EXTRACTION_ERROR',
+        error: errorDetails,
+        retrying: true,
+        retryCount: retryCount,
+        queueSize: messageQueue.length
+      });
+
+      // Schedule retry with exponential backoff
+      setTimeout(() => {
+        console.log(`🔄 Retrying batch send (attempt ${retryCount}/${maxRetries})...`);
+        sendMessages();
+      }, retryDelay);
+
+      // Increase delay for next retry (exponential backoff)
+      retryDelay = Math.min(retryDelay * 2, 30000); // Max 30 seconds
+    } else {
+      console.error(`❌ Failed to send batch after ${maxRetries} retries. Giving up on ${batch.length} messages.`);
+
+      // Notify background about permanent failure
+      chrome.runtime.sendMessage({
+        type: 'EXTRACTION_ERROR',
+        error: `Failed after ${maxRetries} retries: ${errorDetails}`,
+        retrying: false,
+        dropped: batch.length
+      });
+
+      // Reset retry counters
+      retryCount = 0;
+      retryDelay = 1000;
     }
   }
 
@@ -392,17 +482,29 @@
   }
 
   /**
-   * Setup periodic extraction
+   * Setup periodic extraction and queue processing
    */
   function setupPeriodicExtraction() {
+    // Extract new messages periodically
     setInterval(() => {
       extractVisibleMessages();
+    }, config.extractInterval);
 
-      // Send any queued messages
-      if (messageQueue.length > 0) {
+    // Process queue more frequently (every 2 seconds)
+    setInterval(() => {
+      if (messageQueue.length > 0 && !isSending) {
+        console.log(`[Teams Extractor] Queue processor: ${messageQueue.length} messages waiting`);
         sendMessages();
       }
-    }, config.extractInterval);
+    }, 2000);
+
+    // Force flush every 30 seconds if there are any messages
+    setInterval(() => {
+      if (messageQueue.length > 0 && !isSending) {
+        console.log(`[Teams Extractor] Force flush: sending ${messageQueue.length} queued messages`);
+        sendMessages();
+      }
+    }, 30000);
   }
 
   /**
@@ -412,16 +514,45 @@
     if (message.type === 'EXTRACT_NOW') {
       extractVisibleMessages();
       sendMessages();
-      sendResponse({ success: true });
+      sendResponse({
+        success: true,
+        queueSize: messageQueue.length,
+        extracted: extractedMessagesCount
+      });
     } else if (message.type === 'GET_STATUS') {
       sendResponse({
         queueSize: messageQueue.length,
         enabled: config.enabled,
-        channel: extractChannelName()
+        channel: extractChannelName(),
+        isExtracting: isExtracting,
+        isSending: isSending,
+        extractedCount: extractedMessagesCount,
+        retryCount: retryCount,
+        apiUrl: config.apiUrl
       });
     } else if (message.type === 'UPDATE_CONFIG') {
       config = { ...config, ...message.config };
       sendResponse({ success: true });
+    } else if (message.type === 'FORCE_FLUSH') {
+      // Force send all queued messages
+      console.log('[Teams Extractor] Force flush requested');
+      if (!isSending && messageQueue.length > 0) {
+        sendMessages();
+      }
+      sendResponse({
+        success: true,
+        queueSize: messageQueue.length
+      });
+    } else if (message.type === 'CLEAR_QUEUE') {
+      // Clear the message queue (for debugging)
+      const clearedCount = messageQueue.length;
+      messageQueue = [];
+      retryCount = 0;
+      retryDelay = 1000;
+      sendResponse({
+        success: true,
+        cleared: clearedCount
+      });
     }
     return true;
   });
