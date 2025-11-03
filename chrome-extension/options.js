@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('saveBtn').addEventListener('click', saveSettings);
   document.getElementById('testBtn').addEventListener('click', testConnection);
   document.getElementById('resetBtn').addEventListener('click', resetSettings);
+  document.getElementById('installMcpBtn').addEventListener('click', installMcpExtension);
 });
 
 /**
@@ -72,7 +73,7 @@ function saveSettings() {
         chrome.tabs.sendMessage(tab.id, {
           type: 'UPDATE_CONFIG',
           config: settings
-        });
+        }, () => chrome.runtime.lastError);
       });
     });
   });
@@ -127,4 +128,42 @@ function showMessage(message, type) {
   setTimeout(() => {
     statusMessage.className = 'status-message';
   }, 5000);
+}
+
+// MCP Installation
+/**
+ * Install MCP extension for Claude Desktop
+ */
+async function installMcpExtension() {
+  const apiUrl = document.getElementById('apiUrl').value.trim();
+  const mcpStatus = document.getElementById('mcpStatus');
+
+  if (!apiUrl) {
+    showMessage('Please save a valid API URL before installing.', 'error');
+    return;
+  }
+
+  mcpStatus.textContent = 'Installation in progress...';
+  mcpStatus.className = 'status-message'; // Reset classes
+
+  try {
+    const baseUrl = apiUrl.replace('/api', '');
+    const response = await fetch(`${baseUrl}/api/mcp/install`, {
+      method: 'POST',
+    });
+
+    const result = await response.json();
+
+    if (response.ok) {
+      mcpStatus.textContent = `Installation successful: ${result.message}`;
+      mcpStatus.classList.add('success');
+    } else {
+      mcpStatus.textContent = `Installation failed: ${result.error || 'Unknown error'}`;
+      mcpStatus.classList.add('error');
+    }
+  } catch (error) {
+    console.error('Error installing MCP extension:', error);
+    mcpStatus.textContent = `Failed to connect to backend: ${error.message}`;
+    mcpStatus.classList.add('error');
+  }
 }

@@ -47,13 +47,13 @@ A modern, scalable system for extracting and analyzing Microsoft Teams messages 
 
 The MCP server allows you to query and analyze Teams messages directly from Claude Desktop on your Mac.
 
-**Quick Setup:**
+**Install via Claude Desktop extension UI:**
 ```bash
-cd mcp-server
-./setup-claude.sh
+bash scripts/build_claude_extension.sh
 ```
+Open Claude Desktop → **Developer → Extensions → Install Extension** and select the generated `dist/claude-extension/teams-extractor-mcp.zip`. Provide your PostgreSQL connection string when prompted, then restart Claude Desktop.
 
-Then restart Claude Desktop. See [mcp-server/README.md](mcp-server/README.md) for detailed instructions.
+**Alternative CLI setup:** run `./setup-claude.sh` from `mcp-server/` to update Claude's configuration file directly. See [mcp-server/README.md](mcp-server/README.md) for detailed instructions.
 
 > **Note:** The MCP server runs locally on your Mac, not in Docker, as it uses stdio communication with Claude Desktop.
 

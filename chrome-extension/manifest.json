@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Teams Message Extractor",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Extract and monitor Microsoft Teams messages for Claude Desktop integration",
   "permissions": [
     "storage",
