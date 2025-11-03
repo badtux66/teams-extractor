@@ -23,9 +23,22 @@ Model Context Protocol (MCP) server for querying Teams messages directly from Cl
 
 ## 🛠️ Installation on Mac
 
-### Quick Setup (Recommended)
+### Install via Claude Desktop Extension UI (Recommended)
 
-This is the easiest way to install the MCP server for Claude Desktop on your Mac:
+1. Build the Claude extension package from the repository root:
+   ```bash
+   bash scripts/build_claude_extension.sh
+   ```
+   The script copies the MCP server, installs production dependencies, and produces `dist/claude-extension/teams-extractor-mcp.zip`.
+2. Open Claude Desktop and navigate to **Developer → Extensions → Install Extension**
+3. Choose the generated `teams-extractor-mcp.zip`
+4. When prompted, paste your PostgreSQL connection string (e.g. `postgresql://user:password@localhost:5432/teams_extractor`)
+5. Ensure **Use Built-in Node.js for MCP** is enabled in the Claude settings (the default on macOS)
+6. Restart Claude Desktop — the `teams-extractor-mcp` server and its tools will be available immediately
+
+### Command Line Setup (macOS)
+
+If you prefer a script that edits Claude's configuration file directly:
 
 ```bash
 cd mcp-server

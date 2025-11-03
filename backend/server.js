@@ -14,6 +14,7 @@ const messagesRoutes = require('./routes/messages');
 const statsRoutes = require('./routes/stats');
 const healthRoutes = require('./routes/health');
 const extractionRoutes = require('./routes/extraction');
+const mcpRoutes = require('./routes/mcp');
 
 // Initialize Express app
 const app = express();
@@ -78,6 +79,7 @@ app.use('/api/messages', messagesRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/health', healthRoutes);
 app.use('/api/extraction', extractionRoutes);
+app.use('/api/mcp', mcpRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {

@@ -210,6 +210,18 @@ export PROCESSOR_DATA_DIR=/custom/path/data
    - Set target channel: `Güncelleme Planlama`
    - Add trigger keywords: `Güncellendi`, `Yaygınlaştırıldı`
 
+### Claude Desktop MCP Extension
+
+1. **Build package**
+   - From the repository root run `bash scripts/build_claude_extension.sh`
+   - The archive is created at `dist/claude-extension/teams-extractor-mcp.zip`
+2. **Install in Claude**
+   - Open Claude Desktop → Developer → Extensions → Install Extension
+   - Select the generated ZIP file
+   - Provide the Teams Extractor PostgreSQL connection string when prompted
+   - Ensure "Use Built-in Node.js for MCP" remains enabled (default on macOS)
+   - Restart Claude Desktop to load the new MCP server
+
 ## Deployment
 
 ### Production Deployment with Docker

@@ -1,0 +1,56 @@
+{
+  "dxt_version": "0.1",
+  "name": "Teams Extractor MCP",
+  "version": "1.0.0",
+  "description": "Install the Teams Extractor MCP server in Claude Desktop to query Teams history through Model Context Protocol tools.",
+  "keywords": [
+    "teams",
+    "mcp",
+    "claude",
+    "messages",
+    "postgresql"
+  ],
+  "author": {
+    "name": "Teams Extractor",
+    "url": "https://github.com/badtux/teams-extractor"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/badtux/teams-extractor"
+  },
+  "homepage": "https://github.com/badtux/teams-extractor",
+  "server": {
+    "type": "node",
+    "entry_point": "mcp-server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/mcp-server/index.js"
+      ],
+      "env": {
+        "MCP_DATABASE_URL": "${user_config.database_url}"
+      }
+    }
+  },
+  "user_config": {
+    "database_url": {
+      "type": "string",
+      "title": "Database URL",
+      "description": "PostgreSQL connection string for the Teams Extractor database (e.g. postgresql://user:pass@localhost:5432/teams_extractor).",
+      "required": true,
+      "sensitive": true
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=0.2.16",
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  }
+}

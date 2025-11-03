@@ -11,14 +11,48 @@
     apiUrl: 'http://localhost:5000/api',
     enabled: true,
     batchSize: 50,
-    extractInterval: 5000, // 5 seconds
+    extractInterval: 5000, // milliseconds
+    apiKey: '',
   };
 
+  function normalizeInterval(value, fallback) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      return fallback;
+    }
+    return numeric >= 1000 ? numeric : numeric * 1000;
+  }
+
+  function applyConfigUpdate(update = {}) {
+    if (!update || typeof update !== 'object') {
+      return;
+    }
+
+    if (typeof update.apiUrl === 'string' && update.apiUrl.trim()) {
+      config.apiUrl = update.apiUrl.trim();
+    }
+    if (typeof update.enabled === 'boolean') {
+      config.enabled = update.enabled;
+    }
+    if (update.batchSize !== undefined) {
+      const numeric = Number(update.batchSize);
+      if (Number.isFinite(numeric) && numeric > 0) {
+        config.batchSize = numeric;
+      }
+    }
+    if (update.extractInterval !== undefined) {
+      config.extractInterval = normalizeInterval(update.extractInterval, config.extractInterval);
+    }
+    if (typeof update.apiKey === 'string') {
+      config.apiKey = update.apiKey;
+    }
+  }
+
   // Load config from storage
-  chrome.storage.sync.get(['apiUrl', 'enabled'], (result) => {
-    if (result.apiUrl) config.apiUrl = result.apiUrl;
-    if (result.enabled !== undefined) config.enabled = result.enabled;
-  });
+  chrome.storage.sync.get(
+    ['apiUrl', 'enabled', 'batchSize', 'extractInterval', 'apiKey'],
+    (result) => applyConfigUpdate(result)
+  );
 
   // Message queue
   let messageQueue = [];
@@ -78,6 +112,61 @@
       '[class*="thread"]'
     ],
   };
+
+  /**
+   * Send a message to the background service worker without surfacing no-listener errors.
+   */
+  function safeSendMessage(message) {
+    chrome.runtime.sendMessage(message, () => chrome.runtime.lastError);
+  }
+
+  /**
+   * Ask the background service worker to deliver a batch to the backend.
+   */
+  function dispatchBatchToBackground(batchPayload) {
+    return new Promise((resolve, reject) => {
+      const payload = {
+        ...batchPayload,
+        apiUrl: config.apiUrl,
+        apiKey: config.apiKey
+      };
+      chrome.runtime.sendMessage(
+        {
+          type: 'SEND_BATCH',
+          payload: payload
+        },
+        (response) => {
+          const lastError = chrome.runtime.lastError;
+          if (lastError) {
+            console.error('sendMessage failed:', lastError);
+            reject(new Error(lastError.message));
+            return;
+          }
+          if (!response) {
+            const error = new Error('No response from background script. Is it running?');
+            error.isNetworkError = true;
+            reject(error);
+            return;
+          }
+          if (!response.success) {
+            const error = new Error(response?.error || 'Unknown error sending batch');
+            if (response?.status) {
+              error.status = response.status;
+            }
+            if (response?.details) {
+              error.details = response.details;
+            }
+            if (response?.network) {
+              error.isNetworkError = true;
+            }
+            reject(error);
+            return;
+          }
+          resolve(response.result);
+        }
+      );
+    });
+  }
 
   /**
    * Query selector with multiple options
@@ -340,57 +429,40 @@
     }
 
     try {
-      const response = await fetch(`${config.apiUrl}/messages/batch`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messages: transformedMessages,
-          extractionId: extractionId,
-          metadata: {
-            userAgent: navigator.userAgent,
-            teamsUrl: window.location.href,
-            timestamp: new Date().toISOString()
-          }
-        }),
+      const result = await dispatchBatchToBackground({
+        messages: transformedMessages,
+        extractionId,
+        metadata: {
+          userAgent: navigator.userAgent,
+          teamsUrl: window.location.href,
+          timestamp: new Date().toISOString()
+        }
       });
 
-      if (response.ok) {
-        const result = await response.json();
-        console.log(`✅ Successfully sent ${batch.length} messages:`, result);
+      console.log(`✅ Successfully sent ${batch.length} messages:`, result);
 
-        // Update local counter
-        extractedMessagesCount += batch.length;
-        retryCount = 0; // Reset retry count on success
-        retryDelay = 1000; // Reset delay
+      // Update local counter
+      extractedMessagesCount += batch.length;
+      retryCount = 0; // Reset retry count on success
+      retryDelay = 1000; // Reset delay
 
-        // Notify background script
-        chrome.runtime.sendMessage({
-          type: 'MESSAGES_SENT',
-          count: batch.length,
-          inserted: result.inserted || batch.length,
-          duplicates: result.duplicates || 0,
-          totalExtracted: extractedMessagesCount
-        });
+      // Notify background script
+      safeSendMessage({
+        type: 'MESSAGES_SENT',
+        count: batch.length,
+        inserted: result?.inserted || batch.length,
+        duplicates: result?.duplicates || 0,
+        totalExtracted: extractedMessagesCount
+      });
 
-        // Send remaining messages if any
-        if (messageQueue.length > 0) {
-          setTimeout(() => sendMessages(), 100);
-        }
-      } else {
-        const errorText = await response.text();
-        console.error(`❌ Failed to send messages (${response.status}):`, response.statusText, errorText);
-
-        // Re-add to queue for retry
-        messageQueue.unshift(...batch);
-        handleSendFailure(batch, `HTTP ${response.status}: ${response.statusText}`);
+      // Send remaining messages if any
+      if (messageQueue.length > 0) {
+        setTimeout(() => sendMessages(), 100);
       }
     } catch (error) {
-      console.error('❌ Network error sending messages:', error);
+      console.error('❌ Failed to deliver messages:', error);
 
-      // Check if it's a CORS error
-      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+      if (error.isNetworkError || /Failed to fetch|NetworkError/i.test(error.message)) {
         console.error(`
 🔧 BACKEND CONNECTION ISSUE DETECTED!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -409,11 +481,15 @@ Possible causes:
 Current queue size: ${messageQueue.length + batch.length} messages waiting
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         `);
+      } else if (error.details) {
+        console.error('Backend response details:', error.details);
       }
 
       // Re-add to queue for retry
       messageQueue.unshift(...batch);
-      handleSendFailure(batch, error.message);
+      const detailSnippet = error.details ? String(error.details).slice(0, 400) : null;
+      const detailMessage = detailSnippet ? `${error.message}: ${detailSnippet}` : error.message;
+      handleSendFailure(batch, detailMessage);
     } finally {
       isSending = false;
     }
@@ -429,7 +505,7 @@ Current queue size: ${messageQueue.length + batch.length} messages waiting
       console.log(`⏰ Will retry in ${retryDelay / 1000} seconds (attempt ${retryCount}/${maxRetries})`);
 
       // Notify background about the error but with retry pending
-      chrome.runtime.sendMessage({
+      safeSendMessage({
         type: 'EXTRACTION_ERROR',
         error: errorDetails,
         retrying: true,
@@ -449,7 +525,7 @@ Current queue size: ${messageQueue.length + batch.length} messages waiting
       console.error(`❌ Failed to send batch after ${maxRetries} retries. Giving up on ${batch.length} messages.`);
 
       // Notify background about permanent failure
-      chrome.runtime.sendMessage({
+      safeSendMessage({
         type: 'EXTRACTION_ERROR',
         error: `Failed after ${maxRetries} retries: ${errorDetails}`,
         retrying: false,
@@ -531,7 +607,7 @@ Current queue size: ${messageQueue.length + batch.length} messages waiting
         apiUrl: config.apiUrl
       });
     } else if (message.type === 'UPDATE_CONFIG') {
-      config = { ...config, ...message.config };
+      applyConfigUpdate(message.config);
       sendResponse({ success: true });
     } else if (message.type === 'FORCE_FLUSH') {
       // Force send all queued messages
