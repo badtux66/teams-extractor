@@ -1,27 +1,31 @@
-# Teams Extractor MCP Server
+# Teams Extractor MCP Server for Claude Desktop
 
-Model Context Protocol (MCP) server for querying Teams messages directly from Claude Desktop.
+Model Context Protocol (MCP) server for querying Teams messages directly from Claude Desktop on your Mac.
+
+> **Note:** This MCP server is designed to run **locally on your Mac**, not in Docker. The MCP protocol uses stdio (standard input/output) communication, which requires the server to run directly on your system where Claude Desktop can access it.
 
 ## 🚀 Features
 
 - **6 Powerful Tools** for querying and analyzing Teams messages
 - **Full-Text Search** using PostgreSQL's built-in search capabilities
 - **Real-Time Data** - Queries live PostgreSQL database
-- **Easy Setup** - Automated configuration script for Claude Desktop
+- **Easy Setup** - Automated configuration script for Claude Desktop on Mac
 - **Zero Configuration** - Uses stdio protocol, no ports or networking required
+- **Local Installation** - Runs directly on your Mac, not in Docker
 
 ## 📋 Prerequisites
 
-- Node.js 18+ installed
-- Claude Desktop application installed
-- PostgreSQL database with Teams messages (see main project README)
+- **macOS** (for Claude Desktop on Mac)
+- **Node.js 18+** installed (`brew install node`)
+- **Claude Desktop** application installed on your Mac
+- **PostgreSQL database** with Teams messages running (can be local or remote)
 - Database credentials/connection URL
 
-## 🛠️ Installation
+## 🛠️ Installation on Mac
 
 ### Quick Setup (Recommended)
 
-Run the automated setup script:
+This is the easiest way to install the MCP server for Claude Desktop on your Mac:
 
 ```bash
 cd mcp-server
@@ -29,13 +33,18 @@ cd mcp-server
 ```
 
 The script will:
-1. Check Node.js installation
-2. Install npm dependencies
-3. Test database connection
-4. Configure Claude Desktop automatically
-5. Create backup of existing configuration
+1. ✅ Check Node.js installation
+2. ✅ Install npm dependencies
+3. ✅ Prompt for your database URL
+4. ✅ Test database connection
+5. ✅ Configure Claude Desktop automatically (updates `~/Library/Application Support/Claude/claude_desktop_config.json`)
+6. ✅ Create backup of existing configuration
 
-### Manual Setup
+After running the script, just **restart Claude Desktop** and you're ready to go!
+
+### Manual Setup (Advanced)
+
+If you prefer to set it up manually:
 
 1. **Install Dependencies:**
    ```bash
@@ -43,27 +52,28 @@ The script will:
    npm install
    ```
 
-2. **Test MCP Server:**
+2. **Test MCP Server (optional):**
    ```bash
    export MCP_DATABASE_URL="postgresql://user:password@localhost:5432/teams_extractor"
    node index.js
    ```
+   Press Ctrl+C to stop the test.
 
 3. **Configure Claude Desktop:**
 
-   Edit Claude Desktop configuration file:
-   - **Mac**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-   - **Linux**: `~/.config/Claude/claude_desktop_config.json`
-   - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+   Edit the Claude Desktop configuration file on your Mac:
+   ```bash
+   nano ~/Library/Application\ Support/Claude/claude_desktop_config.json
+   ```
 
-   Add this configuration:
+   Add this configuration (replace `/absolute/path/to/mcp-server` with the actual path):
    ```json
    {
      "mcpServers": {
        "teams-extractor": {
          "command": "node",
          "args": [
-           "/absolute/path/to/mcp-server/index.js"
+           "/absolute/path/to/teams-extractor/mcp-server/index.js"
          ],
          "env": {
            "MCP_DATABASE_URL": "postgresql://user:password@localhost:5432/teams_extractor"
@@ -74,6 +84,8 @@ The script will:
    ```
 
 4. **Restart Claude Desktop**
+
+   Completely quit and restart the Claude Desktop app.
 
 ## 🔧 Available Tools
 

@@ -260,42 +260,9 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * GET /api/messages/:id
- * Get single message by ID
- */
-router.get('/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const result = await query(
-      'SELECT * FROM teams.messages WHERE id = $1',
-      [id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'Message not found'
-      });
-    }
-
-    return res.json({
-      success: true,
-      message: result.rows[0]
-    });
-
-  } catch (error) {
-    logger.error('Get message error:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
-  }
-});
-
-/**
  * GET /api/messages/search
  * Full-text search
+ * IMPORTANT: This route must be defined BEFORE the /:id route
  */
 router.get('/search', async (req, res) => {
   try {
@@ -326,6 +293,40 @@ router.get('/search', async (req, res) => {
 
   } catch (error) {
     logger.error('Search error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+/**
+ * GET /api/messages/:id
+ * Get single message by ID
+ */
+router.get('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await query(
+      'SELECT * FROM teams.messages WHERE id = $1',
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Message not found'
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: result.rows[0]
+    });
+
+  } catch (error) {
+    logger.error('Get message error:', error);
     return res.status(500).json({
       success: false,
       error: 'Internal server error'

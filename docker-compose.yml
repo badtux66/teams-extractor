@@ -108,26 +108,6 @@ services:
       timeout: 10s
       retries: 3
 
-  # MCP Server (for Claude Desktop)
-  mcp-server:
-    build:
-      context: ./mcp-server
-      dockerfile: Dockerfile
-    container_name: teams-extractor-mcp
-    environment:
-      MCP_DATABASE_URL: postgresql://mcp_reader:${MCP_READER_PASSWORD:-mcp_reader_password}@postgres:5432/${POSTGRES_DB:-teams_extractor}
-      NODE_ENV: ${NODE_ENV:-production}
-    networks:
-      - teams-extractor-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: "no"
-    profiles:
-      - mcp
-    # MCP server uses stdio, so it's mainly for testing in docker
-    # For actual use with Claude Desktop, run locally
-
   # Nginx Reverse Proxy (Optional)
   nginx:
     image: nginx:alpine

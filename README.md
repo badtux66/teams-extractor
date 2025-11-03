@@ -39,9 +39,23 @@ A modern, scalable system for extracting and analyzing Microsoft Teams messages 
 - **`chrome-extension/`** – Manifest V3 Chrome extension for message extraction
 - **`backend/`** – Node.js/Express API server with PostgreSQL and Redis
 - **`web-gui/`** – React frontend with Material-UI dashboard
-- **`mcp-server/`** – Claude Desktop MCP server for AI-powered queries
+- **`mcp-server/`** – Claude Desktop MCP server for AI-powered queries (installed locally, not in Docker)
 - **`init-scripts/`** – PostgreSQL initialization and schema
 - **`docs/`** – Comprehensive documentation
+
+## 🧠 Claude Desktop Integration
+
+The MCP server allows you to query and analyze Teams messages directly from Claude Desktop on your Mac.
+
+**Quick Setup:**
+```bash
+cd mcp-server
+./setup-claude.sh
+```
+
+Then restart Claude Desktop. See [mcp-server/README.md](mcp-server/README.md) for detailed instructions.
+
+> **Note:** The MCP server runs locally on your Mac, not in Docker, as it uses stdio communication with Claude Desktop.
 
 ## 🔧 Prerequisites
 
@@ -246,7 +260,7 @@ docker-compose logs -f frontend
 - **Extraction Interval**: Adjust `EXTENSION_INTERVAL` in .env for more/less frequent extraction
 - **Batch Size**: Modify `EXTENSION_BATCH_SIZE` to change how many messages are sent per request
 - **Database Schema**: Extend PostgreSQL schema in `init-scripts/01-init.sql` for custom fields
-- **MCP Queries**: Customize MCP server handlers in `mcp-server/` for specific use cases
+- **MCP Queries**: Customize MCP server handlers in `mcp-server/index.js` for specific use cases
 
 ## 📊 Logging & Monitoring
 
