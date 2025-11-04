@@ -2,201 +2,280 @@
 
 ## Overview
 
-The Teams Message Extractor provides a RESTful API built with FastAPI. The API is automatically documented with OpenAPI (Swagger) and available at `http://localhost:8090/docs`.
+The Teams Message Extractor provides a comprehensive RESTful API built with Node.js and Express. The backend handles message ingestion from the Chrome extension, storage in PostgreSQL, and provides endpoints for querying and analytics.
 
-**Base URL**: `http://localhost:8090`
+**Base URL:** `http://localhost:5000/api`
 
-**Authentication**: Currently optional (can be configured with `X-API-Key` header)
+**Default Port:** 5000 (configurable via `PORT` environment variable)
 
-## Endpoints
+**Content Type:** `application/json`
 
-### Health Check
+**CORS:** Enabled for all origins (configurable in production)
 
-Check system health and connectivity.
+## Table of Contents
+
+1. [Authentication](#authentication)
+2. [Message Endpoints](#message-endpoints)
+3. [Statistics Endpoints](#statistics-endpoints)
+4. [Health & Monitoring](#health--monitoring)
+5. [Extraction Management](#extraction-management)
+6. [Data Models](#data-models)
+7. [Error Handling](#error-handling)
+8. [Rate Limiting](#rate-limiting)
+9. [Examples](#examples)
+
+---
+
+## Authentication
+
+**Current Status:** No authentication required (development mode)
+
+**Future:** API key authentication will be added for production deployments.
 
 ```http
-GET /health
-```
-
-**Response** (200 OK):
-```json
-{
-  "status": "ok",
-  "model": "gpt-4",
-  "db": "/app/data/teams_messages.db",
-  "n8n_connected": true
-}
-```
-
-**Response Fields**:
-- `status` (string): System status ("ok" or "error")
-- `model` (string): OpenAI model being used
-- `db` (string): Path to SQLite database
-- `n8n_connected` (boolean): Whether n8n webhook is configured
-
-**Example**:
-```bash
-curl http://localhost:8090/health
+X-API-Key: your-api-key-here
 ```
 
 ---
 
-### Get Statistics
+## Message Endpoints
 
-Retrieve message processing statistics.
+### Bulk Message Ingestion
+
+Ingest multiple messages in a single request. This is the primary endpoint used by the Chrome extension.
 
 ```http
-GET /stats
+POST /api/messages/batch
 ```
 
-**Response** (200 OK):
+**Request Body:**
 ```json
 {
-  "total_messages": 150,
-  "processed": 140,
-  "pending": 5,
-  "failed": 5,
-  "today": 12,
-  "this_week": 68
+  "messages": [
+    {
+      "messageId": "19:abc123def456",
+      "channelName": "General",
+      "content": "Hello team, deployment is complete!",
+      "sender": {
+        "name": "John Doe",
+        "email": "john.doe@company.com"
+      },
+      "timestamp": "2024-11-04T10:30:00.000Z",
+      "url": "https://teams.microsoft.com/l/message/...",
+      "type": "message",
+      "threadId": "19:thread_abc123",
+      "reactions": [
+        { "type": "like", "count": 3 },
+        { "type": "heart", "count": 1 }
+      ],
+      "mentions": [
+        { "name": "Jane Smith", "email": "jane@company.com" }
+      ],
+      "attachments": []
+    }
+  ],
+  "extractionId": "ext_1699091234567",
+  "metadata": {
+    "userAgent": "Chrome/120.0.0.0",
+    "extensionVersion": "1.0.1"
+  }
 }
 ```
 
-**Response Fields**:
-- `total_messages` (int): Total messages ever processed
-- `processed` (int): Successfully forwarded messages
-- `pending` (int): Messages awaiting processing
-- `failed` (int): Messages that encountered errors
-- `today` (int): Messages processed in last 24 hours
-- `this_week` (int): Messages processed in last 7 days
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "processed": 15,
+  "duplicates": 2,
+  "failed": 0,
+  "extractionId": "ext_1699091234567",
+  "messageIds": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+}
+```
 
-**Example**:
+**Error Response (422 Unprocessable Entity):**
+```json
+{
+  "error": "Validation error",
+  "details": [
+    {
+      "field": "messages[0].messageId",
+      "message": "messageId is required"
+    }
+  ]
+}
+```
+
+**Example:**
 ```bash
-curl http://localhost:8090/stats
+curl -X POST http://localhost:5000/api/messages/batch \
+  -H "Content-Type: application/json" \
+  -d @messages.json
 ```
 
 ---
 
 ### List Messages
 
-Retrieve a list of messages with optional filtering.
+Retrieve messages with optional filtering, sorting, and pagination.
 
 ```http
-GET /messages
+GET /api/messages
 ```
 
-**Query Parameters**:
-- `status` (string, optional): Filter by status
-  - Values: `received`, `processed`, `forwarded`, `failed`, `agent_error`, `n8n_error`
-- `author` (string, optional): Filter by author name (partial match)
-- `channel` (string, optional): Filter by channel name (partial match)
-- `limit` (int, optional): Maximum number of results (default: 100, max: 1000)
+**Query Parameters:**
+- `channel` (string, optional) - Filter by channel name (partial match)
+- `author` (string, optional) - Filter by author name (partial match)
+- `type` (string, optional) - Filter by message type (`message`, `reply`, `system`)
+- `startDate` (ISO 8601, optional) - Messages after this date
+- `endDate` (ISO 8601, optional) - Messages before this date
+- `limit` (integer, optional) - Number of results per page (default: 50, max: 100)
+- `offset` (integer, optional) - Pagination offset (default: 0)
+- `sortBy` (string, optional) - Sort field (`timestamp`, `author`, `channel`) (default: `timestamp`)
+- `sortOrder` (string, optional) - Sort direction (`asc`, `desc`) (default: `desc`)
 
-**Response** (200 OK):
+**Response (200 OK):**
 ```json
-[
-  {
-    "id": 1,
-    "message_id": "19:abc123",
-    "channel": "Güncelleme Planlama",
-    "author": "John Doe",
-    "timestamp": "2025-10-27T10:30:00Z",
-    "classification": {
-      "type": "localized",
-      "keyword": "Güncellendi"
-    },
-    "resolution_text": "Güncellendi: Version 4.48.4 deployed to production",
-    "quoted_request": {
-      "author": "Jane Smith",
-      "text": "Can we deploy ng-ui 4.48.4 to production?"
-    },
-    "permalink": "https://teams.microsoft.com/l/message/...",
-    "status": "forwarded",
-    "jira_payload": {
-      "issue_type": "Güncelleştirme",
-      "summary": "[ng-ui] 4.48.4 deploy completed",
-      "description": "...",
-      "labels": ["ng-ui", "guncelleme", "prod"],
-      "custom_fields": {}
-    },
-    "n8n_response_code": 200,
-    "n8n_response_body": "{\"success\":true}",
-    "error": null,
-    "created_at": "2025-10-27T10:30:05Z",
-    "updated_at": "2025-10-27T10:30:12Z"
+{
+  "messages": [
+    {
+      "id": 123,
+      "messageId": "19:abc123",
+      "text": "Hello team!",
+      "author": "John Doe",
+      "authorEmail": "john@company.com",
+      "timestamp": "2024-11-04T10:30:00.000Z",
+      "channel": "General",
+      "url": "https://teams.microsoft.com/l/message/...",
+      "type": "message",
+      "threadId": "19:thread_abc",
+      "reactions": { "like": 3, "heart": 1 },
+      "mentions": [{ "name": "Jane", "email": "jane@company.com" }],
+      "attachments": [],
+      "extractedAt": "2024-11-04T10:30:05.000Z",
+      "createdAt": "2024-11-04T10:30:05.000Z"
+    }
+  ],
+  "pagination": {
+    "total": 150,
+    "limit": 50,
+    "offset": 0,
+    "hasMore": true
   }
-]
+}
 ```
 
-**Examples**:
+**Examples:**
 ```bash
 # Get all messages
-curl http://localhost:8090/messages
+curl http://localhost:5000/api/messages
 
-# Get only failed messages
-curl http://localhost:8090/messages?status=failed
+# Filter by channel
+curl "http://localhost:5000/api/messages?channel=General"
 
-# Get messages by specific author
-curl "http://localhost:8090/messages?author=John+Doe"
+# Filter by author and limit results
+curl "http://localhost:5000/api/messages?author=John&limit=10"
 
-# Get messages with limit
-curl http://localhost:8090/messages?limit=50
+# Date range query
+curl "http://localhost:5000/api/messages?startDate=2024-11-01T00:00:00Z&endDate=2024-11-04T23:59:59Z"
 
-# Combine filters
-curl "http://localhost:8090/messages?status=forwarded&author=John&limit=20"
+# Pagination
+curl "http://localhost:5000/api/messages?limit=50&offset=50"
 ```
 
 ---
 
-### Get Message Details
+### Get Single Message
 
-Retrieve full details of a specific message.
+Retrieve detailed information about a specific message.
 
 ```http
-GET /messages/{record_id}
+GET /api/messages/:id
 ```
 
-**Path Parameters**:
-- `record_id` (int, required): Message ID
+**Path Parameters:**
+- `id` (integer, required) - Message database ID
 
-**Response** (200 OK):
+**Response (200 OK):**
 ```json
 {
-  "id": 1,
-  "message_id": "19:abc123",
-  "channel": "Güncelleme Planlama",
+  "id": 123,
+  "messageId": "19:abc123",
+  "text": "Hello team, deployment is complete!",
   "author": "John Doe",
-  "timestamp": "2025-10-27T10:30:00Z",
-  "classification": {
-    "type": "localized",
-    "keyword": "Güncellendi"
-  },
-  "resolution_text": "Güncellendi: Version 4.48.4 deployed",
-  "quoted_request": {
-    "author": "Jane Smith",
-    "text": "Can we deploy ng-ui 4.48.4?"
-  },
-  "permalink": "https://teams.microsoft.com/l/message/...",
-  "status": "forwarded",
-  "jira_payload": {...},
-  "n8n_response_code": 200,
-  "n8n_response_body": "{\"success\":true}",
-  "error": null,
-  "created_at": "2025-10-27T10:30:05Z",
-  "updated_at": "2025-10-27T10:30:12Z"
+  "authorEmail": "john@company.com",
+  "timestamp": "2024-11-04T10:30:00.000Z",
+  "channel": "General",
+  "url": "https://teams.microsoft.com/l/message/...",
+  "type": "message",
+  "threadId": "19:thread_abc",
+  "reactions": [
+    { "type": "like", "count": 3 }
+  ],
+  "mentions": [],
+  "attachments": [],
+  "extractedAt": "2024-11-04T10:30:05.000Z",
+  "createdAt": "2024-11-04T10:30:05.000Z"
 }
 ```
 
-**Error Responses**:
-- `404 Not Found`: Message with given ID doesn't exist
+**Error Response (404 Not Found):**
 ```json
 {
-  "detail": "Record not found"
+  "error": "Message not found",
+  "messageId": 123
 }
 ```
 
-**Example**:
+**Example:**
 ```bash
-curl http://localhost:8090/messages/123
+curl http://localhost:5000/api/messages/123
+```
+
+---
+
+### Search Messages
+
+Full-text search across message content using PostgreSQL's search capabilities.
+
+```http
+GET /api/messages/search
+```
+
+**Query Parameters:**
+- `q` (string, required) - Search query
+- `channel` (string, optional) - Limit search to specific channel
+- `author` (string, optional) - Limit search to specific author
+- `limit` (integer, optional) - Number of results (default: 20, max: 100)
+
+**Response (200 OK):**
+```json
+{
+  "query": "deployment",
+  "results": [
+    {
+      "id": 123,
+      "text": "Hello team, deployment is complete!",
+      "author": "John Doe",
+      "channel": "General",
+      "timestamp": "2024-11-04T10:30:00.000Z",
+      "url": "https://teams.microsoft.com/l/message/...",
+      "relevance": 0.95
+    }
+  ],
+  "total": 15,
+  "limit": 20
+}
+```
+
+**Example:**
+```bash
+# Basic search
+curl "http://localhost:5000/api/messages/search?q=deployment"
+
+# Search in specific channel
+curl "http://localhost:5000/api/messages/search?q=deployment&channel=DevOps"
 ```
 
 ---
@@ -206,195 +285,526 @@ curl http://localhost:8090/messages/123
 Delete a message from the database.
 
 ```http
-DELETE /messages/{record_id}
+DELETE /api/messages/:id
 ```
 
-**Path Parameters**:
-- `record_id` (int, required): Message ID
+**Path Parameters:**
+- `id` (integer, required) - Message database ID
 
-**Response** (200 OK):
+**Response (200 OK):**
 ```json
 {
-  "status": "deleted"
+  "success": true,
+  "messageId": 123,
+  "message": "Message deleted successfully"
 }
 ```
 
-**Error Responses**:
-- `404 Not Found`: Message doesn't exist
-
-**Example**:
-```bash
-curl -X DELETE http://localhost:8090/messages/123
-```
-
-⚠️ **Warning**: Deletion is permanent and cannot be undone.
-
----
-
-### Retry Message Processing
-
-Retry processing a failed message.
-
-```http
-POST /messages/{record_id}/retry
-```
-
-**Path Parameters**:
-- `record_id` (int, required): Message ID
-
-**Response** (200 OK):
+**Error Response (404 Not Found):**
 ```json
 {
-  "status": "retrying"
+  "error": "Message not found",
+  "messageId": 123
 }
 ```
 
-**Error Responses**:
-- `404 Not Found`: Message doesn't exist
+⚠️ **Warning:** Deletion is permanent and cannot be undone.
 
-**Example**:
+**Example:**
 ```bash
-curl -X POST http://localhost:8090/messages/123/retry
+curl -X DELETE http://localhost:5000/api/messages/123
 ```
-
-**Behavior**:
-1. Resets message status to "queued"
-2. Clears previous error
-3. Re-runs AI processing
-4. Attempts to forward to n8n
 
 ---
 
-### Ingest Message
+## Statistics Endpoints
 
-Ingest a new message from the browser extension.
+### Dashboard Statistics
+
+Get comprehensive statistics for the dashboard.
 
 ```http
-POST /ingest
+GET /api/stats
 ```
 
-**Headers**:
-- `Content-Type: application/json`
-- `X-API-Key: <key>` (optional, if configured)
-
-**Request Body**:
+**Response (200 OK):**
 ```json
 {
-  "channel": "Güncelleme Planlama",
-  "messageId": "19:abc123",
-  "timestamp": "2025-10-27T10:30:00Z",
-  "author": "John Doe",
-  "resolutionText": "Güncellendi: Version 4.48.4 deployed",
-  "classification": {
-    "type": "localized",
-    "keyword": "Güncellendi"
+  "totalMessages": 1543,
+  "todayMessages": 47,
+  "weekMessages": 312,
+  "channels": 8,
+  "uniqueSenders": 25,
+  "messagesByChannel": [
+    { "channel": "General", "count": 543 },
+    { "channel": "DevOps", "count": 421 },
+    { "channel": "Engineering", "count": 315 }
+  ],
+  "messagesByDay": [
+    { "date": "2024-11-01", "count": 45 },
+    { "date": "2024-11-02", "count": 52 },
+    { "date": "2024-11-03", "count": 38 },
+    { "date": "2024-11-04", "count": 47 }
+  ],
+  "topSenders": [
+    { "author": "John Doe", "count": 125 },
+    { "author": "Jane Smith", "count": 98 },
+    { "author": "Bob Wilson", "count": 87 }
+  ]
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:5000/api/stats
+```
+
+---
+
+### Channel Statistics
+
+Get detailed statistics for specific channels.
+
+```http
+GET /api/stats/channels
+```
+
+**Query Parameters:**
+- `startDate` (ISO 8601, optional) - Start date for statistics
+- `endDate` (ISO 8601, optional) - End date for statistics
+
+**Response (200 OK):**
+```json
+{
+  "channels": [
+    {
+      "name": "General",
+      "messageCount": 543,
+      "uniqueSenders": 18,
+      "lastMessage": "2024-11-04T10:30:00.000Z",
+      "averageMessagesPerDay": 15.2
+    },
+    {
+      "name": "DevOps",
+      "messageCount": 421,
+      "uniqueSenders": 12,
+      "lastMessage": "2024-11-04T09:15:00.000Z",
+      "averageMessagesPerDay": 12.1
+    }
+  ],
+  "dateRange": {
+    "start": "2024-10-01T00:00:00.000Z",
+    "end": "2024-11-04T23:59:59.000Z"
+  }
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:5000/api/stats/channels
+
+# With date range
+curl "http://localhost:5000/api/stats/channels?startDate=2024-11-01T00:00:00Z&endDate=2024-11-04T23:59:59Z"
+```
+
+---
+
+### Sender Statistics
+
+Get statistics about message senders.
+
+```http
+GET /api/stats/senders
+```
+
+**Query Parameters:**
+- `limit` (integer, optional) - Number of top senders to return (default: 10)
+- `channel` (string, optional) - Filter by channel
+
+**Response (200 OK):**
+```json
+{
+  "senders": [
+    {
+      "author": "John Doe",
+      "email": "john@company.com",
+      "messageCount": 125,
+      "channels": ["General", "DevOps", "Engineering"],
+      "firstMessage": "2024-10-01T08:00:00.000Z",
+      "lastMessage": "2024-11-04T10:30:00.000Z"
+    }
+  ],
+  "totalSenders": 25
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:5000/api/stats/senders
+
+# Top 5 senders in DevOps channel
+curl "http://localhost:5000/api/stats/senders?limit=5&channel=DevOps"
+```
+
+---
+
+### Timeline Statistics
+
+Get time-series data for message volume.
+
+```http
+GET /api/stats/timeline
+```
+
+**Query Parameters:**
+- `interval` (string, optional) - Time interval (`hour`, `day`, `week`, `month`) (default: `day`)
+- `startDate` (ISO 8601, optional) - Start date
+- `endDate` (ISO 8601, optional) - End date
+- `channel` (string, optional) - Filter by channel
+
+**Response (200 OK):**
+```json
+{
+  "timeline": [
+    {
+      "period": "2024-11-01",
+      "count": 45,
+      "channels": {
+        "General": 20,
+        "DevOps": 15,
+        "Engineering": 10
+      }
+    },
+    {
+      "period": "2024-11-02",
+      "count": 52,
+      "channels": {
+        "General": 25,
+        "DevOps": 17,
+        "Engineering": 10
+      }
+    }
+  ],
+  "interval": "day",
+  "total": 312
+}
+```
+
+**Example:**
+```bash
+# Daily timeline for last 7 days
+curl http://localhost:5000/api/stats/timeline
+
+# Hourly timeline for today
+curl "http://localhost:5000/api/stats/timeline?interval=hour&startDate=2024-11-04T00:00:00Z"
+```
+
+---
+
+## Health & Monitoring
+
+### Comprehensive Health Check
+
+Get overall system health status.
+
+```http
+GET /api/health
+```
+
+**Response (200 OK):**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2024-11-04T10:30:00.000Z",
+  "uptime": 345678,
+  "version": "1.0.1",
+  "services": {
+    "postgresql": {
+      "status": "healthy",
+      "responseTime": 5,
+      "connections": {
+        "total": 20,
+        "idle": 15,
+        "active": 5
+      }
+    },
+    "redis": {
+      "status": "healthy",
+      "responseTime": 2,
+      "memory": {
+        "used": "15.2 MB",
+        "peak": "18.5 MB"
+      }
+    }
   },
-  "quotedRequest": {
-    "author": "Jane Smith",
-    "text": "Can we deploy ng-ui 4.48.4?"
-  },
-  "permalink": "https://teams.microsoft.com/l/message/..."
+  "memory": {
+    "heapUsed": "125 MB",
+    "heapTotal": "200 MB",
+    "external": "5 MB"
+  }
 }
 ```
 
-**Response** (202 Accepted):
+**Error Response (503 Service Unavailable):**
 ```json
 {
-  "id": 124,
-  "status": "queued"
+  "status": "unhealthy",
+  "timestamp": "2024-11-04T10:30:00.000Z",
+  "services": {
+    "postgresql": {
+      "status": "unhealthy",
+      "error": "Connection timeout"
+    },
+    "redis": {
+      "status": "healthy"
+    }
+  }
 }
 ```
 
-**Example**:
+**Example:**
 ```bash
-curl -X POST http://localhost:8090/ingest \
-  -H "Content-Type: application/json" \
-  -d '{
-    "channel": "Güncelleme Planlama",
-    "author": "John Doe",
-    "resolutionText": "Güncellendi",
-    "classification": {"type": "localized", "keyword": "Güncellendi"}
-  }'
-```
-
-**Note**: Processing happens asynchronously. Use the returned `id` to check status.
-
----
-
-### Get Configuration
-
-Retrieve current system configuration.
-
-```http
-GET /config
-```
-
-**Response** (200 OK):
-```json
-{
-  "openai_api_key": "sk-***",
-  "n8n_webhook_url": "https://n8n.example.com/webhook/...",
-  "n8n_api_key": "***",
-  "processor_host": "0.0.0.0",
-  "processor_port": 8090,
-  "auto_retry": true,
-  "max_retries": 3
-}
-```
-
-**Note**: Sensitive fields are masked for security.
-
-**Example**:
-```bash
-curl http://localhost:8090/config
+curl http://localhost:5000/api/health
 ```
 
 ---
 
-### Update Configuration
+### Readiness Probe
 
-Update system configuration.
+Check if the service is ready to accept traffic (for Kubernetes/Docker orchestration).
 
 ```http
-PUT /config
+GET /api/health/ready
 ```
 
-**Headers**:
-- `Content-Type: application/json`
-
-**Request Body**:
+**Response (200 OK):**
 ```json
 {
-  "openai_api_key": "sk-new-key",
-  "n8n_webhook_url": "https://n8n.example.com/webhook/teams",
-  "n8n_api_key": "new-api-key",
-  "processor_host": "0.0.0.0",
-  "processor_port": 8090,
-  "auto_retry": true,
-  "max_retries": 3
+  "ready": true
 }
 ```
 
-**Response** (200 OK):
+**Response (503 Service Unavailable):**
 ```json
 {
-  "status": "updated"
+  "ready": false,
+  "reason": "Database not connected"
 }
 ```
 
-**Example**:
+**Example:**
 ```bash
-curl -X PUT http://localhost:8090/config \
-  -H "Content-Type: application/json" \
-  -d '{
-    "openai_api_key": "sk-new-key",
-    "n8n_webhook_url": "https://n8n.example.com/webhook/teams",
-    "auto_retry": true,
-    "max_retries": 5
-  }'
+curl http://localhost:5000/api/health/ready
 ```
 
-⚠️ **Note**: Configuration is saved to disk and persists across restarts.
+---
+
+### Liveness Probe
+
+Check if the service is alive (for Kubernetes/Docker orchestration).
+
+```http
+GET /api/health/live
+```
+
+**Response (200 OK):**
+```json
+{
+  "alive": true
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:5000/api/health/live
+```
+
+---
+
+### Prometheus Metrics
+
+Get metrics in Prometheus format.
+
+```http
+GET /api/health/metrics
+```
+
+**Response (200 OK):**
+```
+# HELP http_requests_total Total number of HTTP requests
+# TYPE http_requests_total counter
+http_requests_total{method="GET",status="200"} 1543
+
+# HELP http_request_duration_seconds HTTP request latency
+# TYPE http_request_duration_seconds histogram
+http_request_duration_seconds_bucket{le="0.1"} 1234
+http_request_duration_seconds_bucket{le="0.5"} 1520
+http_request_duration_seconds_bucket{le="1.0"} 1540
+http_request_duration_seconds_sum 345.6
+http_request_duration_seconds_count 1543
+
+# HELP db_connections_total Database connection pool size
+# TYPE db_connections_total gauge
+db_connections_total{state="idle"} 15
+db_connections_total{state="active"} 5
+```
+
+**Example:**
+```bash
+curl http://localhost:5000/api/health/metrics
+```
+
+---
+
+## Extraction Management
+
+### Trigger Manual Extraction
+
+Manually trigger message extraction (for testing).
+
+```http
+POST /api/extraction/trigger
+```
+
+**Request Body:**
+```json
+{
+  "channel": "General",
+  "force": false
+}
+```
+
+**Response (202 Accepted):**
+```json
+{
+  "success": true,
+  "sessionId": "ext_1699091234567",
+  "message": "Extraction triggered successfully"
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:5000/api/extraction/trigger \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"General"}'
+```
+
+---
+
+### List Extraction Sessions
+
+Get list of extraction sessions with their status.
+
+```http
+GET /api/extraction/sessions
+```
+
+**Query Parameters:**
+- `limit` (integer, optional) - Number of sessions to return (default: 20)
+- `status` (string, optional) - Filter by status (`active`, `completed`, `failed`)
+
+**Response (200 OK):**
+```json
+{
+  "sessions": [
+    {
+      "sessionId": "ext_1699091234567",
+      "status": "completed",
+      "messagesProcessed": 47,
+      "duplicates": 5,
+      "failed": 0,
+      "startedAt": "2024-11-04T10:25:00.000Z",
+      "completedAt": "2024-11-04T10:30:00.000Z",
+      "duration": 300000
+    }
+  ],
+  "total": 156
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:5000/api/extraction/sessions
+
+# Active sessions only
+curl "http://localhost:5000/api/extraction/sessions?status=active"
+```
+
+---
+
+### Get Active Extraction Session
+
+Get currently active extraction session.
+
+```http
+GET /api/extraction/active
+```
+
+**Response (200 OK):**
+```json
+{
+  "sessionId": "ext_1699091234567",
+  "status": "active",
+  "messagesProcessed": 23,
+  "startedAt": "2024-11-04T10:28:00.000Z",
+  "progress": {
+    "current": 23,
+    "target": 50,
+    "percentage": 46
+  }
+}
+```
+
+**Response (404 Not Found) - No active session:**
+```json
+{
+  "active": false,
+  "message": "No active extraction session"
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:5000/api/extraction/active
+```
+
+---
+
+### Update Extraction Session
+
+Update the status of an extraction session.
+
+```http
+PATCH /api/extraction/sessions/:id
+```
+
+**Path Parameters:**
+- `id` (string, required) - Session ID
+
+**Request Body:**
+```json
+{
+  "status": "completed",
+  "messagesProcessed": 47
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "sessionId": "ext_1699091234567",
+  "status": "completed"
+}
+```
+
+**Example:**
+```bash
+curl -X PATCH http://localhost:5000/api/extraction/sessions/ext_1699091234567 \
+  -H "Content-Type: application/json" \
+  -d '{"status":"completed","messagesProcessed":47}'
+```
 
 ---
 
@@ -404,45 +814,52 @@ curl -X PUT http://localhost:8090/config \
 
 ```typescript
 interface Message {
-  id: number                        // Unique identifier
-  message_id: string | null        // Teams message ID
-  channel: string                  // Teams channel name
-  author: string                   // Message author
-  timestamp: string | null         // Message timestamp (ISO 8601)
-  classification: {                // Message classification
-    type: string                   // "localized" or "global"
-    keyword: string                // Trigger keyword used
-  }
-  resolution_text: string          // Full resolution message
-  quoted_request: {                // Original request (if any)
-    author: string
-    text: string
-  } | null
-  permalink: string | null         // Teams message link
-  status: string                   // Processing status
-  jira_payload: object | null     // Generated Jira data
-  n8n_response_code: number | null // HTTP status from n8n
-  n8n_response_body: string | null // Response from n8n
-  error: string | null            // Error message (if failed)
-  created_at: string              // Creation timestamp
-  updated_at: string              // Last update timestamp
+  id: number;                          // Database ID
+  messageId: string;                   // Teams message ID (unique)
+  text: string;                        // Message content
+  author: string;                      // Author name
+  authorEmail: string | null;          // Author email
+  timestamp: string;                   // Message timestamp (ISO 8601)
+  channel: string;                     // Channel name
+  url: string | null;                  // Teams message URL
+  type: string;                        // Message type (message, reply, system)
+  threadId: string | null;             // Thread ID
+  reactions: Reaction[];               // Array of reactions
+  mentions: Mention[];                 // Array of mentions
+  attachments: Attachment[];           // Array of attachments
+  extractedAt: string;                 // Extraction timestamp
+  createdAt: string;                   // Database creation timestamp
 }
 ```
 
-### Message Status Values
+### Reaction
 
-- `received`: Message received, not yet processed
-- `queued`: Queued for processing
-- `processed`: AI processing completed
-- `forwarded`: Successfully sent to n8n and Jira
-- `failed`: Generic failure
-- `agent_error`: AI processing failed
-- `n8n_error`: n8n forwarding failed
+```typescript
+interface Reaction {
+  type: string;                        // Reaction type (like, heart, etc.)
+  count: number;                       // Number of reactions
+}
+```
 
-### Classification Types
+### Mention
 
-- `localized`: Güncelleştirme (localized update)
-- `global`: Yaygınlaştırma (global rollout)
+```typescript
+interface Mention {
+  name: string;                        // Mentioned user name
+  email: string;                       // Mentioned user email
+}
+```
+
+### Attachment
+
+```typescript
+interface Attachment {
+  type: string;                        // Attachment type (file, image, link)
+  name: string;                        // Attachment name
+  url: string;                         // Attachment URL
+  size?: number;                       // File size in bytes
+}
+```
 
 ---
 
@@ -450,39 +867,66 @@ interface Message {
 
 ### Standard Error Response
 
+All errors follow this format:
+
 ```json
 {
-  "detail": "Error message here"
+  "error": "Error description",
+  "details": "Additional details (optional)",
+  "code": "ERROR_CODE"
 }
 ```
 
 ### HTTP Status Codes
 
-- `200 OK`: Request successful
-- `202 Accepted`: Request accepted for async processing
-- `404 Not Found`: Resource doesn't exist
-- `422 Unprocessable Entity`: Invalid request data
-- `500 Internal Server Error`: Server error
+- `200 OK` - Request successful
+- `201 Created` - Resource created successfully
+- `202 Accepted` - Request accepted for processing
+- `400 Bad Request` - Invalid request data
+- `404 Not Found` - Resource not found
+- `422 Unprocessable Entity` - Validation error
+- `500 Internal Server Error` - Server error
+- `503 Service Unavailable` - Service temporarily unavailable
 
-### Error Examples
+### Common Error Codes
 
-**Invalid message ID**:
+- `VALIDATION_ERROR` - Request validation failed
+- `NOT_FOUND` - Resource not found
+- `DUPLICATE_MESSAGE` - Message already exists
+- `DATABASE_ERROR` - Database operation failed
+- `REDIS_ERROR` - Redis operation failed
+
+**Example Error Responses:**
+
+**Validation Error (422):**
 ```json
 {
-  "detail": "Record not found"
+  "error": "Validation error",
+  "details": [
+    {
+      "field": "messageId",
+      "message": "messageId is required"
+    }
+  ],
+  "code": "VALIDATION_ERROR"
 }
 ```
 
-**Invalid request body**:
+**Not Found (404):**
 ```json
 {
-  "detail": [
-    {
-      "loc": ["body", "channel"],
-      "msg": "field required",
-      "type": "value_error.missing"
-    }
-  ]
+  "error": "Message not found",
+  "messageId": 123,
+  "code": "NOT_FOUND"
+}
+```
+
+**Server Error (500):**
+```json
+{
+  "error": "Internal server error",
+  "message": "Database connection failed",
+  "code": "DATABASE_ERROR"
 }
 ```
 
@@ -490,99 +934,179 @@ interface Message {
 
 ## Rate Limiting
 
-Currently, no rate limiting is enforced. For production:
+**Current Status:** No rate limiting implemented
 
-- Implement rate limiting per IP
-- Suggested: 100 requests/minute for listing
-- Suggested: 10 requests/minute for write operations
+**Future Implementation:**
+- 100 requests/minute for read operations
+- 20 requests/minute for write operations
+- Rate limit headers will be included in responses
 
----
-
-## Interactive Documentation
-
-FastAPI provides automatic interactive documentation:
-
-**Swagger UI**:
-```
-http://localhost:8090/docs
-```
-
-**ReDoc**:
-```
-http://localhost:8090/redoc
-```
-
-**OpenAPI Schema**:
-```
-http://localhost:8090/openapi.json
+**Future Headers:**
+```http
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1699091300
 ```
 
 ---
 
-## Client Libraries
+## Examples
+
+### Node.js/TypeScript
+
+```typescript
+import axios from 'axios';
+
+const API_BASE = 'http://localhost:5000/api';
+
+// Get dashboard statistics
+async function getStats() {
+  const response = await axios.get(`${API_BASE}/stats`);
+  console.log(response.data);
+}
+
+// Search messages
+async function searchMessages(query: string) {
+  const response = await axios.get(`${API_BASE}/messages/search`, {
+    params: { q: query }
+  });
+  return response.data.results;
+}
+
+// Ingest messages
+async function ingestMessages(messages: any[]) {
+  const response = await axios.post(`${API_BASE}/messages/batch`, {
+    messages,
+    extractionId: `ext_${Date.now()}`,
+    metadata: {
+      extensionVersion: '1.0.1'
+    }
+  });
+  return response.data;
+}
+
+// Delete message
+async function deleteMessage(id: number) {
+  await axios.delete(`${API_BASE}/messages/${id}`);
+}
+```
 
 ### Python
 
 ```python
 import requests
 
-# Base URL
-BASE_URL = "http://localhost:8090"
+API_BASE = 'http://localhost:5000/api'
 
-# Get health status
-response = requests.get(f"{BASE_URL}/health")
-print(response.json())
+# Get dashboard statistics
+def get_stats():
+    response = requests.get(f'{API_BASE}/stats')
+    return response.json()
 
-# List messages
-response = requests.get(f"{BASE_URL}/messages", params={"status": "failed"})
-messages = response.json()
+# Search messages
+def search_messages(query):
+    response = requests.get(f'{API_BASE}/messages/search', params={'q': query})
+    return response.json()['results']
 
-# Get specific message
-message_id = 123
-response = requests.get(f"{BASE_URL}/messages/{message_id}")
-message = response.json()
+# List messages with filters
+def list_messages(channel=None, author=None, limit=50):
+    params = {'limit': limit}
+    if channel:
+        params['channel'] = channel
+    if author:
+        params['author'] = author
 
-# Retry failed message
-response = requests.post(f"{BASE_URL}/messages/{message_id}/retry")
-print(response.json())
-```
+    response = requests.get(f'{API_BASE}/messages', params=params)
+    return response.json()['messages']
 
-### JavaScript/TypeScript
-
-```typescript
-const BASE_URL = 'http://localhost:8090';
-
-// Get health status
-const health = await fetch(`${BASE_URL}/health`).then(r => r.json());
-
-// List messages with filters
-const messages = await fetch(
-  `${BASE_URL}/messages?status=failed&limit=50`
-).then(r => r.json());
-
-// Get specific message
-const message = await fetch(
-  `${BASE_URL}/messages/123`
-).then(r => r.json());
-
-// Retry failed message
-const result = await fetch(`${BASE_URL}/messages/123/retry`, {
-  method: 'POST'
-}).then(r => r.json());
+# Delete message
+def delete_message(message_id):
+    response = requests.delete(f'{API_BASE}/messages/{message_id}')
+    return response.json()
 ```
 
 ### cURL
 
-See examples in each endpoint section above.
+```bash
+# Get all messages
+curl http://localhost:5000/api/messages
+
+# Search messages
+curl "http://localhost:5000/api/messages/search?q=deployment"
+
+# Get statistics
+curl http://localhost:5000/api/stats
+
+# Get message by ID
+curl http://localhost:5000/api/messages/123
+
+# Delete message
+curl -X DELETE http://localhost:5000/api/messages/123
+
+# Health check
+curl http://localhost:5000/api/health
+
+# Ingest messages
+curl -X POST http://localhost:5000/api/messages/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{
+      "messageId": "test_123",
+      "channelName": "General",
+      "content": "Test message",
+      "sender": {"name": "Test User", "email": "test@example.com"},
+      "timestamp": "2024-11-04T10:30:00Z",
+      "type": "message"
+    }],
+    "extractionId": "test_extraction"
+  }'
+```
+
+---
+
+## WebSocket API
+
+The backend also provides real-time updates via WebSocket using Socket.io.
+
+### Connection
+
+```javascript
+import io from 'socket.io-client';
+
+const socket = io('http://localhost:5000');
+
+socket.on('connect', () => {
+  console.log('Connected to WebSocket');
+});
+
+socket.on('newMessage', (message) => {
+  console.log('New message received:', message);
+});
+
+socket.on('statsUpdate', (stats) => {
+  console.log('Stats updated:', stats);
+});
+
+socket.on('disconnect', () => {
+  console.log('Disconnected from WebSocket');
+});
+```
+
+### Events
+
+- `newMessage` - Fired when a new message is ingested
+- `statsUpdate` - Fired when statistics are updated
+- `healthUpdate` - Fired when system health changes
+- `extractionStart` - Fired when extraction session starts
+- `extractionEnd` - Fired when extraction session ends
 
 ---
 
 ## Versioning
 
-Current API version: **v1**
+**Current Version:** v1 (unversioned endpoints)
 
-The API is currently unversioned. Future versions will include version prefix:
-- v2: `http://localhost:8090/v2/...`
+**Future:** API versioning will be introduced with prefix `/api/v2/...`
 
 ---
 
@@ -590,11 +1114,12 @@ The API is currently unversioned. Future versions will include version prefix:
 
 For API support:
 - Review this documentation
-- Check interactive docs at `/docs`
+- Check [Troubleshooting Guide](TROUBLESHOOTING.md)
 - Open GitHub issue
 - Contact development team
 
 ---
 
-**Version**: 1.0.0
-**Last Updated**: 2025-10-27
+**Document Version:** 2.0
+**Last Updated:** November 2024
+**API Version:** 1.0 (Chrome Extension Architecture)
