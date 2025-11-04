@@ -724,5 +724,6 @@ docker-compose -f docker-compose.scale.yml up -d --scale backend=3
 
 ---
 
-**Version:** 1.0.0
-**Last Updated:** 2025-10-27
+**Document Version:** 2.0
+**Last Updated:** November 2024
+**Architecture:** Chrome Extension-based (v2.0)
