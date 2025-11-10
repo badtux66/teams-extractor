@@ -103,9 +103,15 @@
     ],
     channel: [
       '[data-tid="channel-name"]',
-      '.channel-header',
-      'h2[class*="channel"]',
-      '[role="heading"]'
+      '[data-tid="chat-pane-header-title"]',
+      '[data-tid="chat-header-title"]',
+      'h2[data-tid*="channel"]',
+      'h1[data-tid*="channel"]',
+      '.channel-header h2',
+      '.channel-header h1',
+      'h2[class*="channel-name"]',
+      'h1[class*="channel-name"]',
+      '[role="heading"][data-tid*="channel"]'
     ],
     thread: [
       '[data-tid="message-thread"]',
@@ -273,8 +279,48 @@
    * Extract channel/chat name from page
    */
   function extractChannelName() {
+    // Try to find channel name with specific selectors
     const channelElement = querySelector(document, SELECTORS.channel);
-    return channelElement ? channelElement.textContent.trim() : 'Unknown';
+
+    if (channelElement) {
+      const text = channelElement.textContent.trim();
+
+      // Validate that this looks like a channel name, not message content
+      // Channel names are typically:
+      // - Shorter (< 100 chars)
+      // - Don't contain "kullanıcısından" (from user) or similar phrases
+      // - Don't look like dates
+      // - Are in the header area (top 25% of viewport)
+
+      const rect = channelElement.getBoundingClientRect();
+      const isInHeaderArea = rect.top < window.innerHeight * 0.25;
+      const looksLikeMessage = text.includes('kullanıcısından') || text.length > 100;
+      const looksLikeDate = /^\d{1,2}\s+\w+\s+\w+$/.test(text); // e.g., "23 Temmuz Çarşamba"
+
+      if (isInHeaderArea && !looksLikeMessage && !looksLikeDate) {
+        console.log('[Teams Extractor] Found channel name:', text);
+        return text;
+      } else {
+        console.warn('[Teams Extractor] Rejected potential channel name:', {
+          text: text.substring(0, 50),
+          isInHeaderArea,
+          looksLikeMessage,
+          looksLikeDate
+        });
+      }
+    }
+
+    // Fallback: try to extract from URL
+    // Teams URLs often have format: /channel/<channel-id>/<channel-name>
+    const urlMatch = window.location.pathname.match(/\/channel\/[^/]+\/([^/]+)/);
+    if (urlMatch) {
+      const nameFromUrl = decodeURIComponent(urlMatch[1]).replace(/-/g, ' ');
+      console.log('[Teams Extractor] Extracted channel name from URL:', nameFromUrl);
+      return nameFromUrl;
+    }
+
+    console.warn('[Teams Extractor] Could not determine channel name, using "Unknown"');
+    return 'Unknown';
   }
 
   /**
@@ -637,7 +683,7 @@ Current queue size: ${messageQueue.length + batch.length} messages waiting
    * Initialize extraction
    */
   function initialize() {
-    console.log('[Teams Extractor] Initializing Teams Message Extractor v1.0.1');
+    console.log('[Teams Extractor] Initializing Teams Message Extractor v1.0.2');
     console.log('[Teams Extractor] URL:', window.location.href);
 
     let attempts = 0;
