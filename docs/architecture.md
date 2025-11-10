@@ -47,7 +47,7 @@ The Teams Message Extractor is a modern, scalable system for extracting and anal
 - Uses MutationObserver to detect new messages in real-time
 - Extracts message content, sender, timestamp, channel, and metadata
 - Batches messages for efficient API calls
-- Implements retry logic for failed uploads
+- Service worker manages a persistent queue and exponential backoff retries
 - Stores state in Chrome Storage API
 
 **Files:**
@@ -63,7 +63,7 @@ The Teams Message Extractor is a modern, scalable system for extracting and anal
 3. Extract text, author, timestamp, and metadata
 4. Deduplicate using message IDs
 5. Batch into groups (default: 50 messages)
-6. POST to backend `/api/messages/batch` endpoint
+6. Hand batches to the background service worker, which delivers them to `/api/messages/batch` with retry/backoff logic
 
 ### 2. Backend API (Node.js/Express)
 
@@ -198,12 +198,15 @@ SETEX message:{id} 3600 {jsonData}
 - Natural language query interface
 - Connects via stdio to Claude Desktop
 - Runs locally on user's machine (not in Docker)
+- Packaged for easy installation via Claude Desktop (manifest in `claude-extension/`)
 
 **Available Tools:**
 - `list_messages` - Query messages with filters
 - `search_messages` - Full-text search
+- `get_statistics` - Database summary metrics
 - `get_message` - Get single message details
-- `get_stats` - Database statistics
+- `get_channel_summary` - Activity summary for a Teams channel
+- `get_sender_activity` - Activity summary for a specific person
 
 ## Data Flow
 
@@ -214,7 +217,7 @@ SETEX message:{id} 3600 {jsonData}
 3. **MutationObserver detects new messages** in DOM
 4. **Extension extracts message data** from HTML elements
 5. **Messages batched** (default: every 5 seconds or 50 messages)
-6. **Extension POSTs batch** to `/api/messages/batch`
+6. **Background service worker POSTs batch** to `/api/messages/batch` with retries
 7. **Backend validates** incoming data
 8. **Redis checks** for duplicate message IDs
 9. **New messages stored** in PostgreSQL

@@ -229,7 +229,7 @@ docker-compose exec frontend /bin/sh
 # Database shell
 make db-shell
 # or
-sqlite3 data/teams_messages.db
+docker-compose exec db psql -U postgres -d teams_extractor
 ```
 
 ### Building Images
@@ -301,7 +301,7 @@ make test            # Run tests
 Health checks run automatically for all services:
 
 **Backend:**
-- Endpoint: `http://localhost:8090/health`
+- Endpoint: `http://localhost:5000/api/health`
 - Interval: 30 seconds
 - Timeout: 10 seconds
 - Start period: 40 seconds
@@ -351,7 +351,7 @@ Teams Message Extractor - Health Check
 
 🔧 Checking backend health...
 ✅ Backend is healthy!
-Health info: {"status":"ok","model":"gpt-4","db":"/app/data/teams_messages.db","n8n_connected":true}
+Health info: {"status":"healthy","services":{"postgresql":{"status":"healthy"},"redis":{"status":"healthy"}}}
 
 🌐 Checking frontend health...
 ✅ Frontend is healthy!
@@ -375,8 +375,8 @@ Health Check Complete
 
 🌐 Access Points:
   - Frontend: http://localhost:3000
-  - Backend API: http://localhost:8090
-  - API Docs: http://localhost:8090/docs
+  - Backend API: http://localhost:5000/api
+  - Claude MCP Package: dist/claude-extension/teams-extractor-mcp.zip
 ```
 
 ## Backup & Restore
@@ -394,7 +394,7 @@ make db-backup
 ```
 
 **What gets backed up:**
-- Database (`data/teams_messages.db`)
+- PostgreSQL dump (`backups/db/*.sql`)
 - Configuration (`.env`)
 - Logs (`logs/`)
 
@@ -443,8 +443,8 @@ make rebuild
 ### Port Already in Use
 
 ```bash
-# Find process using port 8090
-lsof -i :8090
+# Find process using port 5000
+lsof -i :5000
 
 # Kill process
 kill -9 <PID>
@@ -462,14 +462,14 @@ sudo chown -R $(whoami):$(whoami) data/ logs/
 chmod +x scripts/*.sh
 ```
 
-### Database Locked
+### Database Volume Permission Issues
 
 ```bash
-# Stop all services
+# Stop services
 make down
 
-# Remove lock file
-rm data/teams_messages.db-journal
+# Ensure your user owns the postgres volume mountpoint
+sudo chown -R $(whoami):$(whoami) data/postgres
 
 # Restart
 make up
@@ -524,9 +524,9 @@ docker network inspect teams-extractor_teams-extractor-network
 OPENAI_API_KEY=sk-prod-xxx
 N8N_WEBHOOK_URL=https://n8n.yourdomain.com/webhook/teams
 N8N_API_KEY=prod-secret-key
-HOST=0.0.0.0
-PORT=8090
-PROCESSOR_DATA_DIR=/app/data
+PORT=5000
+DATABASE_URL=postgresql://teams_admin:supersecret@db:5432/teams_extractor
+REDIS_URL=redis://redis:6379
 ```
 
 **2. Reverse Proxy (Nginx)**
@@ -555,7 +555,7 @@ server {
     }
 
     location /api/ {
-        proxy_pass http://localhost:8090/;
+        proxy_pass http://localhost:5000/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
@@ -648,15 +648,15 @@ deploy:
 **2. Database Optimization**
 
 ```bash
-# Add indexes
-sqlite3 data/teams_messages.db <<EOF
-CREATE INDEX IF NOT EXISTS idx_status ON messages(status);
-CREATE INDEX IF NOT EXISTS idx_created_at ON messages(created_at);
-CREATE INDEX IF NOT EXISTS idx_author ON messages(author);
-EOF
+# Add indexes if they were dropped
+docker-compose exec db psql -U postgres -d teams_extractor <<'SQL'
+CREATE INDEX IF NOT EXISTS idx_messages_created_at ON teams.messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_sender_name ON teams.messages(sender_name);
+CREATE INDEX IF NOT EXISTS idx_messages_channel_name ON teams.messages(channel_name);
+SQL
 
 # Vacuum regularly
-sqlite3 data/teams_messages.db "VACUUM;"
+docker-compose exec db psql -U postgres -d teams_extractor -c "VACUUM ANALYZE;"
 ```
 
 **3. Log Rotation**

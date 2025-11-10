@@ -36,9 +36,11 @@ Before using Teams Message Extractor, ensure you have:
    - Click the extension icon in Chrome toolbar
    - Click the settings (⚙️) icon
    - Enter the Backend API URL (usually `http://localhost:5000/api`)
-   - Set extraction interval (default: 5000ms)
-   - Set batch size (default: 50 messages)
-   - Click "Save Settings"
+   - (Optional) Provide an API key if your backend enforces one
+   - Leave the extraction interval at `5` (seconds) unless you need faster/slower polling
+   - Adjust batch size or enable reactions/threads/attachments as needed
+   - Click **Install MCP Extension** if you want the backend to register the Claude Desktop package automatically
+   - Click **Save Settings**
 
 3. **Access the Web Dashboard**
    - Open your browser
@@ -67,10 +69,11 @@ Click the extension icon to see:
 
 #### Status Indicators
 
-- 🟢 **Green badge:** Extension is active and working
-- 🟡 **Yellow badge:** Extension is paused or waiting
-- 🔴 **Red badge:** Extension encountered an error
-- Number badge: Count of messages in current extraction queue
+- ✅ **Green ✓ badge:** Extension is ready and has an active Teams tab
+- 🔄 **Gray ⟳ badge:** A Teams tab just finished loading; extraction will start momentarily
+- 🔢 **Blue number badge:** Total number of successfully delivered messages in this browser session
+- ⏰ **Orange clock badge:** The service worker is retrying a batch after a temporary failure
+- ❗ **Red ! badge:** Permanent failure—open the popup for the most recent error details
 
 ### Using the Extension
 
@@ -94,28 +97,34 @@ Click the extension icon to see:
 ### Extension Settings
 
 **Backend API URL**
-- URL where the backend server is running
+- Base URL of the backend API (`/messages/batch` is appended automatically)
 - Default: `http://localhost:5000/api`
-- Change this if backend is on a different server
+- Update this if your backend is hosted elsewhere
+
+**API Key**
+- Optional header value sent as `X-API-Key`
+- Leave blank if your backend does not enforce authentication
+
+**Enable automatic extraction**
+- Master toggle controlling whether the content script runs automatically
+- Useful when you only want to capture messages on demand
 
 **Extraction Interval**
-- How often (in milliseconds) to check for new messages
-- Default: 5000ms (5 seconds)
-- Lower = more frequent extraction (higher resource usage)
-- Higher = less frequent extraction (lower resource usage)
-- Recommended range: 3000-10000ms
+- How often (in seconds) the content script scans for new messages
+- Values under `1` second are rounded up to preserve performance
 
 **Batch Size**
-- Number of messages to send in each API call
-- Default: 50 messages
-- Lower = more frequent API calls
-- Higher = fewer API calls but larger payloads
-- Recommended range: 25-100 messages
+- Number of messages bundled into each background upload
+- Lower values create more frequent network calls; higher values reduce API traffic but increase queue size
 
-**Auto-start on Teams**
-- Automatically start extracting when Teams pages load
-- Default: Enabled
-- Disable if you want to manually control extraction
+**Extract reactions / threads / attachments**
+- Toggle inclusion of extra metadata for richer analytics
+
+**Debug mode**
+- Enables additional console logging for troubleshooting (best left off in production)
+
+**Install MCP Extension**
+- Calls the backend helper that registers the Claude Desktop MCP package using the current server configuration
 
 ### Troubleshooting Extension
 

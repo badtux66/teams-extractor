@@ -97,34 +97,33 @@ docker-compose ps
 docker-compose logs -f
 
 # Test health endpoint
-curl http://localhost:8090/health
+curl http://localhost:5000/api/health
 ```
 
 ### Manual Installation
 
 #### Backend Setup
 
-1. **Create virtual environment**
+1. **Install dependencies**
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+cd backend
+npm install
 ```
 
-2. **Install dependencies**
+2. **Set environment variables**
 ```bash
-pip install -r mcp/requirements.txt
-```
-
-3. **Set environment variables**
-```bash
+export DATABASE_URL=postgresql://user:pass@localhost:5432/teams_extractor
+export REDIS_URL=redis://localhost:6379
+# Optional integrations
 export OPENAI_API_KEY=sk-...
 export N8N_WEBHOOK_URL=https://...
-export N8N_API_KEY=...  # optional
+export N8N_API_KEY=...
 ```
 
-4. **Start the backend**
+3. **Start the backend**
 ```bash
-python -m processor.server
+npm run dev
+# or npm start for production mode
 ```
 
 #### Frontend Setup
@@ -160,19 +159,25 @@ OPENAI_API_KEY=sk-your-key-here
 N8N_WEBHOOK_URL=https://your-n8n.com/webhook/teams-guncelleme
 N8N_API_KEY=your-n8n-api-key  # Optional
 
-# Processor Configuration
-HOST=0.0.0.0
-PORT=8090
-PROCESSOR_DATA_DIR=./data
+# Backend Configuration
+PORT=5000
+DATABASE_URL=postgresql://postgres:postgres@db:5432/teams_extractor
+REDIS_URL=redis://redis:6379
+NODE_ENV=development
 ```
 
 ### Database Configuration
 
-SQLite database is created automatically at `data/teams_messages.db`.
+The backend expects PostgreSQL. When using Docker the `db` service is provisioned automatically. For local development, point `DATABASE_URL` at your own instance, for example:
 
-To change location:
 ```bash
-export PROCESSOR_DATA_DIR=/custom/path/data
+export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/teams_extractor
+```
+
+Run the migrations/init script (Docker does this automatically):
+
+```bash
+psql "$DATABASE_URL" -f init-scripts/01-init.sql
 ```
 
 ### n8n Workflow Setup
@@ -201,14 +206,15 @@ export PROCESSOR_DATA_DIR=/custom/path/data
    - Open `chrome://extensions`
    - Enable Developer mode
    - Click "Load unpacked"
-   - Select `extension/` folder
+   - Select the `chrome-extension/` folder
 
 2. **Configure extension**
-   - Click extension options
-   - Set processor URL: `http://localhost:8090/ingest`
-   - Enter your Teams display name
-   - Set target channel: `Güncelleme Planlama`
-   - Add trigger keywords: `Güncellendi`, `Yaygınlaştırıldı`
+   - Click the extension options page
+   - Set backend API URL: `http://localhost:5000/api`
+   - (Optional) Provide an API key if required by your backend
+   - Leave extraction interval at `5` (seconds) unless you need faster/slower polling
+   - Adjust batch size or enable reactions/threads/attachments if needed
+   - Click **Install MCP Extension** if you want the backend to register the Claude MCP package automatically
 
 ### Claude Desktop MCP Extension
 
@@ -237,7 +243,7 @@ services:
       - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL}
       - N8N_API_KEY=${N8N_API_KEY}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -260,7 +266,7 @@ server {
     }
 
     location /api/ {
-        proxy_pass http://localhost:8090/;
+        proxy_pass http://localhost:5000/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
@@ -277,9 +283,9 @@ sudo certbot --nginx -d teams-extractor.yourdomain.com
 
 For high-volume deployments:
 
-1. **Use PostgreSQL** instead of SQLite
-2. **Add load balancer** for multiple backend instances
-3. **Implement Redis** for caching
+1. **Run PostgreSQL on managed or clustered service**
+2. **Add a load balancer** in front of replicated backend instances
+3. **Ensure Redis persistence** for dedupe keys if you need restart tolerance
 4. **Use CDN** for frontend assets
 
 ## Monitoring
@@ -288,16 +294,27 @@ For high-volume deployments:
 
 **Backend health endpoint:**
 ```bash
-curl http://localhost:8090/health
+curl http://localhost:5000/api/health
 ```
 
 Response:
 ```json
 {
-  "status": "ok",
-  "model": "gpt-4",
-  "db": "/app/data/teams_messages.db",
-  "n8n_connected": true
+  "status": "healthy",
+  "timestamp": "2025-01-14T12:34:56.789Z",
+  "services": {
+    "postgresql": { "status": "healthy", "responseTime": 12 },
+    "redis": { "status": "healthy", "responseTime": 4 }
+  },
+  "database": {
+    "totalMessages": 12345,
+    "totalSessions": 42,
+    "databaseSize": 314572800
+  },
+  "memory": { "rss": 150, "heapUsed": 68 },
+  "process": { "nodeVersion": "v20.10.0" },
+  "responseTime": 25,
+  "n8n_connected": false
 }
 ```
 
@@ -321,7 +338,8 @@ docker-compose logs -f frontend
 
 **Database queries:**
 ```bash
-sqlite3 data/teams_messages.db "SELECT * FROM messages ORDER BY created_at DESC LIMIT 10;"
+docker-compose exec db psql -U postgres -d teams_extractor -c \
+  "SELECT channel_name, sender_name, timestamp FROM teams.messages ORDER BY timestamp DESC LIMIT 10;"
 ```
 
 ### Metrics to Monitor
@@ -339,8 +357,8 @@ sqlite3 data/teams_messages.db "SELECT * FROM messages ORDER BY created_at DESC 
    - Should be < 500ms average
 
 4. **Database size**
-   - Monitor `teams_messages.db` file size
-   - Implement cleanup if growing too large
+   - Monitor `pg_database_size('teams_extractor')`
+   - Implement retention policies if growing too large
 
 ### Alerting
 
@@ -357,20 +375,23 @@ Set up alerts for:
 **Automated backup script:**
 ```bash
 #!/bin/bash
+set -euo pipefail
+
 BACKUP_DIR="/backups/teams-extractor"
 DATE=$(date +%Y%m%d_%H%M%S)
+DB_URL="${DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/teams_extractor}"
 
-# Create backup directory
-mkdir -p $BACKUP_DIR
+mkdir -p "$BACKUP_DIR/db"
 
-# Backup database
-cp data/teams_messages.db "$BACKUP_DIR/messages_$DATE.db"
+# Dump PostgreSQL database
+pg_dump "$DB_URL" > "$BACKUP_DIR/db/teams_extractor_$DATE.sql"
 
-# Backup config
-cp data/config.json "$BACKUP_DIR/config_$DATE.json"
+# Backup configuration
+cp .env "$BACKUP_DIR/env_$DATE"
 
 # Keep only last 30 days
-find $BACKUP_DIR -name "*.db" -mtime +30 -delete
+find "$BACKUP_DIR/db" -name "*.sql" -mtime +30 -delete
+find "$BACKUP_DIR" -name "env_*" -mtime +30 -delete
 ```
 
 **Schedule with cron:**
@@ -387,7 +408,7 @@ docker-compose down
 
 2. **Restore database**
 ```bash
-cp /backups/teams-extractor/messages_YYYYMMDD.db data/teams_messages.db
+psql "$DATABASE_URL" < /backups/teams-extractor/db/teams_extractor_YYYYMMDD.sql
 ```
 
 3. **Restart services**
@@ -441,16 +462,16 @@ rm -rf node_modules package-lock.json
 npm install
 ```
 
-**Database locked error:**
+**Database container restarting:**
 ```bash
-# Stop all processes
-docker-compose down
+# Review database logs
+docker-compose logs db | tail -50
 
-# Remove lock file
-rm data/teams_messages.db-journal
+# Ensure volume permissions are correct
+sudo chown -R $(whoami):$(whoami) data/postgres
 
-# Restart
-docker-compose up -d
+# Restart stack
+docker-compose up -d db backend
 ```
 
 ## Security
@@ -494,22 +515,21 @@ Currently, the GUI has no authentication. For production:
 
 ### Backend Optimization
 
-1. **Increase worker threads**
-```bash
-uvicorn processor.server:app --workers 4 --host 0.0.0.0 --port 8090
-```
+1. **Scale Node workers**
+   - Run the backend behind a process manager such as `pm2` or `systemd`
+   - For multi-core hosts use the Node cluster mode (`pm2 start npm --name teams-backend -- run start --watch`)
 
 2. **Database optimization**
 ```sql
 -- Add indexes
-CREATE INDEX idx_status ON messages(status);
-CREATE INDEX idx_created_at ON messages(created_at);
-CREATE INDEX idx_author ON messages(author);
+CREATE INDEX IF NOT EXISTS idx_messages_channel_id ON teams.messages(channel_id);
+CREATE INDEX IF NOT EXISTS idx_messages_sender_name ON teams.messages(sender_name);
+CREATE INDEX IF NOT EXISTS idx_messages_created_at ON teams.messages(created_at);
 ```
 
 3. **Connection pooling**
-   - Configure httpx client pool
-   - Limit concurrent OpenAI requests
+   - Adjust `max` / `idleTimeoutMillis` in `backend/config/database.js`
+   - Keep Redis connections reused rather than created per request
 
 ### Frontend Optimization
 
@@ -571,17 +591,18 @@ docker-compose up -d frontend
 
 **Vacuum database:**
 ```bash
-sqlite3 data/teams_messages.db "VACUUM;"
+docker-compose exec db psql -U postgres -d teams_extractor -c "VACUUM ANALYZE;"
 ```
 
 **Check integrity:**
 ```bash
-sqlite3 data/teams_messages.db "PRAGMA integrity_check;"
+docker-compose exec db psql -U postgres -d teams_extractor -c "SELECT pg_is_in_recovery();"
 ```
 
 **Cleanup old messages** (older than 90 days):
-```sql
-DELETE FROM messages WHERE created_at < date('now', '-90 days');
+```bash
+docker-compose exec db psql -U postgres -d teams_extractor -c \
+  "DELETE FROM teams.messages WHERE timestamp < NOW() - INTERVAL '90 days';"
 ```
 
 ## Support

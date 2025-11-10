@@ -20,7 +20,7 @@ Run these commands to quickly diagnose issues:
 docker-compose ps
 
 # Check system health
-curl http://localhost:8090/health
+curl http://localhost:5000/api/health
 
 # Check frontend is accessible
 curl http://localhost:3000
@@ -29,9 +29,8 @@ curl http://localhost:3000
 docker-compose logs --tail=50 backend
 docker-compose logs --tail=50 frontend
 
-# Check database
-ls -lh data/teams_messages.db
-sqlite3 data/teams_messages.db "SELECT COUNT(*) FROM messages;"
+# Check database connectivity
+docker-compose exec db psql -U postgres -d teams_extractor -c "SELECT COUNT(*) FROM teams.messages;"
 ```
 
 ## Common Issues
@@ -109,53 +108,60 @@ curl https://api.openai.com/v1/models \
   -H "Authorization: Bearer $OPENAI_API_KEY"
 ```
 
-3. **Database corrupted**:
+3. **Database unavailable**:
 ```bash
-# Check database integrity
-sqlite3 data/teams_messages.db "PRAGMA integrity_check;"
+# Check PostgreSQL status
+docker-compose logs db | tail -50
 
-# If corrupted, restore from backup
-cp /backups/messages_latest.db data/teams_messages.db
+# Verify connections
+docker-compose exec db psql -U postgres -d teams_extractor -c "SELECT 1;"
+
+# If necessary restore from backup
+psql "$DATABASE_URL" < backups/db/latest.sql
 ```
 
 ---
 
-### Issue: Messages stuck in "received" status
+### Issue: Queue size increases but no messages appear
 
 **Symptoms**:
-- Messages appear in database but never get processed
-- Status stays at "received"
+- Extension popup shows queue growing
+- Badge displays ⏰ or ! with retries
+- Backend `/api/messages` stays empty
 
 **Diagnosis**:
 ```bash
-# Check for processing errors
-sqlite3 data/teams_messages.db \
-  "SELECT id, author, status, error FROM messages WHERE status='received';"
+# Check Chrome extension service worker console for errors
+# chrome://extensions -> Teams Message Extractor -> "service worker"
 
-# Check backend logs
-docker-compose logs backend | grep -i error
+# Verify backend health
+curl http://localhost:5000/api/health
+
+# Look for failed batch uploads
+docker-compose logs backend | grep "Batch processing failed"
 ```
 
 **Solutions**:
 
-1. **OpenAI API issues**:
-```bash
-# Verify API key
-echo $OPENAI_API_KEY
+1. **Wrong backend URL in extension**:
+   - Open extension options and confirm Backend API URL points to `http://localhost:5000/api`
+   - Click **Save Settings** and reload the Teams tab
 
-# Check OpenAI status: https://status.openai.com
+2. **Backend rejects requests**:
+```bash
+# Tail backend logs while retry happens
+docker-compose logs -f backend
+
+# Manually post a sample payload
+curl -X POST http://localhost:5000/api/messages/batch \
+  -H "Content-Type: application/json" \
+  -d '{"extractionId":"test","messages":[]}'
 ```
 
-2. **Agent processing error**:
+3. **Redis not available**:
 ```bash
-# Check for detailed errors
-docker-compose logs backend | grep "AgentError"
-```
-
-3. **Retry processing**:
-```bash
-# Use GUI to retry or via API
-curl -X POST http://localhost:8090/messages/{id}/retry
+docker-compose logs redis
+docker-compose exec redis redis-cli ping
 ```
 
 ---
@@ -168,12 +174,12 @@ curl -X POST http://localhost:8090/messages/{id}/retry
 
 **Diagnosis**:
 ```bash
-# Check n8n connection
-curl http://localhost:8090/health | jq '.n8n_connected'
+# Check n8n connection flag
+curl http://localhost:5000/api/health | jq '.n8n_connected'
 
-# Check message status
-sqlite3 data/teams_messages.db \
-  "SELECT status, n8n_response_code, error FROM messages ORDER BY id DESC LIMIT 10;"
+# Check message metadata for webhook responses
+docker-compose exec db psql -U postgres -d teams_extractor -c \
+  "SELECT metadata->>'n8n_response_code', metadata->>'n8n_error' FROM teams.messages ORDER BY id DESC LIMIT 10;"
 ```
 
 **Solutions**:
@@ -232,10 +238,10 @@ curl -v $N8N_WEBHOOK_URL
 - Default: "Güncellendi", "Yaygınlaştırıldı"
 - Add custom keywords in extension options
 
-3. **Processor URL incorrect**:
-- Extension options → Processor URL
-- Should be: `http://localhost:8090/ingest`
-- Test URL in browser (should show "Not Found" - that's OK)
+3. **Backend API URL incorrect**:
+- Extension options → Backend API URL
+- Should be: `http://localhost:5000/api`
+- Test `/api/health` in the browser (should return JSON)
 
 4. **Teams DOM changed**:
 - Microsoft may have updated Teams markup
@@ -248,46 +254,42 @@ curl -v $N8N_WEBHOOK_URL
 
 ### Backend won't start
 
-**Error**: `ModuleNotFoundError: No module named 'fastapi'`
+**Common errors**:
+- `Error: Cannot find module '/usr/src/app/backend/index.js'`
+- `PrismaClientInitializationError` (if database not reachable)
 
-**Solution**:
+**Solutions**:
 ```bash
-# Reinstall dependencies
-pip install -r mcp/requirements.txt
+# Ensure dependencies are installed
+cd backend
+npm install
 
-# Or rebuild Docker container
+# Rebuild Docker container
 docker-compose build backend
+
+# Check environment variables
+grep DATABASE_URL .env
+grep REDIS_URL .env
 ```
 
 ---
 
-### Backend crashes with "Database is locked"
+### Backend cannot connect to PostgreSQL
+
+**Symptoms**:
+- Backend logs contain `ECONNREFUSED` or `password authentication failed`
+- `/api/health` reports `postgresql: unhealthy`
 
 **Solution**:
 ```bash
-# Stop all services
-docker-compose down
+# Verify database credentials
+psql postgresql://postgres:postgres@localhost:5432/postgres -c '\conninfo'
 
-# Remove lock file
-rm data/teams_messages.db-journal
+# Check DATABASE_URL in .env matches your database settings
+grep DATABASE_URL .env
 
-# Restart
-docker-compose up -d
-```
-
----
-
-### Backend uses wrong Python version
-
-**Error**: `SyntaxError: invalid syntax` (type hints)
-
-**Solution**:
-```bash
-# Check Python version (need 3.10+)
-python3 --version
-
-# Use correct version
-python3.11 -m processor.server
+# Restart database container
+docker-compose restart db
 ```
 
 ---
@@ -302,7 +304,7 @@ python3.11 -m processor.server
 # Look for JavaScript errors
 
 # Check if API is accessible
-curl http://localhost:8090/health
+curl http://localhost:5000/api/health
 ```
 
 **Solutions**:
@@ -352,10 +354,10 @@ npm install <missing-module>
 **Solution**:
 ```bash
 # Test stats endpoint
-curl http://localhost:8090/stats
+curl http://localhost:5000/api/stats
 
 # Check if messages exist
-curl http://localhost:8090/messages
+curl http://localhost:5000/api/messages
 ```
 
 ---
@@ -369,7 +371,7 @@ curl http://localhost:8090/messages
 2. Enable "Developer mode"
 3. Click "Remove" on old extension
 4. Click "Load unpacked"
-5. Select `extension/` folder
+5. Select `chrome-extension/` folder
 
 ---
 
@@ -378,13 +380,11 @@ curl http://localhost:8090/messages
 **Error**: `Access-Control-Allow-Origin`
 
 **Solution**:
-Backend already has CORS enabled. If still seeing errors:
+Backend already allows `chrome-extension://` origins. If errors persist:
 
-```bash
-# Check backend CORS config in processor/server.py
-# Should have:
-# allow_origins=["*"]
-```
+- Confirm `backend/server.js` is running (port `5000`)
+- Verify the extension API URL is `http://localhost:5000/api`
+- Restart the extension after changing settings
 
 ---
 
@@ -400,34 +400,40 @@ docker-compose up -d backend
 ```
 
 2. **Wrong URL in extension**:
-- Extension options → Processor URL
-- Must include `/ingest` path
-- Example: `http://localhost:8090/ingest`
+- Extension options → Backend API URL
+- Should be `http://localhost:5000/api` (or your deployment URL)
 
 3. **Firewall blocking**:
 ```bash
-# Allow port 8090
-sudo ufw allow 8090
+# Allow port 5000
+sudo ufw allow 5000
 ```
 
 ---
 
 ## Database Issues
 
-### Cannot open database file
+### PostgreSQL container keeps restarting
 
-**Error**: `unable to open database file`
+**Diagnosis**:
+```bash
+docker-compose logs db
+```
+
+Common causes:
+- Invalid credentials (`FATAL: password authentication failed`)
+- Database files owned by root after manual copy
+- Volume not mounted correctly
 
 **Solution**:
 ```bash
-# Create data directory
-mkdir -p data
+# Reset the database container (data is preserved in the named volume)
+docker-compose stop db
+docker-compose rm -f db
+docker-compose up -d db
 
-# Check permissions
-chmod 755 data
-
-# Reinitialize database
-python -m processor.server
+# Verify the database is reachable
+psql "$DATABASE_URL" -c 'SELECT NOW();'
 ```
 
 ---
@@ -437,41 +443,34 @@ python -m processor.server
 **Diagnosis**:
 ```bash
 # Check database size
-du -h data/teams_messages.db
+docker-compose exec db psql -U postgres -d teams_extractor -c \
+  "SELECT pg_size_pretty(pg_database_size(current_database()));"
 ```
 
 **Solution**:
 ```bash
-# Vacuum database
-sqlite3 data/teams_messages.db "VACUUM;"
+# Remove messages older than 90 days (adjust as needed)
+docker-compose exec db psql -U postgres -d teams_extractor -c \
+  "DELETE FROM teams.messages WHERE timestamp < NOW() - INTERVAL '90 days';"
 
-# Delete old messages (>90 days)
-sqlite3 data/teams_messages.db \
-  "DELETE FROM messages WHERE created_at < date('now', '-90 days');"
-
-# Vacuum again
-sqlite3 data/teams_messages.db "VACUUM;"
+# Reclaim space
+docker-compose exec db psql -U postgres -d teams_extractor -c "VACUUM ANALYZE;"
 ```
 
 ---
 
-### Corrupted database
-
-**Symptoms**:
-- "database disk image is malformed"
-- Random crashes
+### Restore from backup fails
 
 **Solution**:
 ```bash
-# Attempt recovery
-sqlite3 data/teams_messages.db ".recover" | sqlite3 recovered.db
+# Ensure no clients are connected
+docker-compose stop backend
 
-# If successful, replace
-mv data/teams_messages.db data/messages_corrupted.db
-mv recovered.db data/teams_messages.db
+# Restore using psql
+psql "$DATABASE_URL" < backups/db/latest.sql
 
-# Restart services
-docker-compose restart backend
+# Restart backend
+docker-compose start backend
 ```
 
 ---
@@ -535,18 +534,20 @@ curl https://api.openai.com/v1/models \
 **Diagnosis**:
 ```bash
 # Check message count
-sqlite3 data/teams_messages.db "SELECT COUNT(*) FROM messages;"
+docker-compose exec db psql -U postgres -d teams_extractor -c \
+  "SELECT COUNT(*) FROM teams.messages;"
 
 # Check backend response time
-time curl http://localhost:8090/stats
+time curl http://localhost:5000/api/stats
 ```
 
 **Solutions**:
 
 1. **Too many messages**:
 ```bash
-# Add indexes
-sqlite3 data/teams_messages.db "CREATE INDEX idx_created_at ON messages(created_at);"
+# Add missing indexes
+docker-compose exec db psql -U postgres -d teams_extractor -c \
+  "CREATE INDEX IF NOT EXISTS idx_messages_created_at ON teams.messages(created_at);"
 
 # Reduce limit in frontend API calls
 ```
@@ -566,7 +567,7 @@ sqlite3 data/teams_messages.db "CREATE INDEX idx_created_at ON messages(created_
 docker stats
 
 # Check process memory
-ps aux | grep python
+ps aux | grep node
 ```
 
 **Solutions**:
@@ -581,8 +582,8 @@ docker-compose restart
 
 2. **Too many workers**:
 ```bash
-# Reduce workers in uvicorn command
-uvicorn processor.server:app --workers 2
+# Reduce Node cluster workers (if using pm2)
+pm2 scale teams-backend 1
 ```
 
 ---
@@ -591,12 +592,12 @@ uvicorn processor.server:app --workers 2
 
 ### Port already in use
 
-**Error**: `Bind for 0.0.0.0:8090 failed: port is already allocated`
+**Error**: `Bind for 0.0.0.0:5000 failed: port is already allocated`
 
 **Solution**:
 ```bash
 # Find process using port
-lsof -i :8090
+lsof -i :5000
 
 # Kill process
 kill -9 <PID>
@@ -654,8 +655,8 @@ docker-compose ps
 docker-compose logs --tail=100 > logs.txt
 
 # Database info
-sqlite3 data/teams_messages.db \
-  "SELECT status, COUNT(*) FROM messages GROUP BY status;" \
+docker-compose exec db psql -U postgres -d teams_extractor -c \
+  "SELECT channel_name, COUNT(*) FROM teams.messages GROUP BY 1 ORDER BY 2 DESC LIMIT 10;" \
   > db_status.txt
 ```
 
