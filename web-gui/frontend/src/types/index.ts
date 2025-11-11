@@ -12,11 +12,11 @@ export interface Message {
   type: string
   thread_id: string | null
   attachments?: unknown[] | null
-  reactions: unknown[] | null
+  reactions?: unknown[] | Record<string, unknown> | null
   metadata?: Record<string, unknown> | null
   extracted_at?: string | null
-  created_at: string
-  updated_at: string
+  created_at?: string | null
+  updated_at?: string | null
 }
 
 export interface JiraPayload {
