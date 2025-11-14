@@ -11,6 +11,7 @@ const { redis } = require('./config/redis');
 
 // Import routes
 const messagesRoutes = require('./routes/messages');
+const conversationsRoutes = require('./routes/conversations');
 const statsRoutes = require('./routes/stats');
 const healthRoutes = require('./routes/health');
 const extractionRoutes = require('./routes/extraction');
@@ -76,6 +77,7 @@ app.use((req, res, next) => {
 
 // Mount routes
 app.use('/api/messages', messagesRoutes);
+app.use('/api/conversations', conversationsRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/health', healthRoutes);
 app.use('/api/extraction', extractionRoutes);

@@ -88,8 +88,14 @@ async function transaction(callback) {
   }
 }
 
+// Get pool instance
+function getPool() {
+  return pool;
+}
+
 module.exports = {
   pool,
   query,
-  transaction
+  transaction,
+  getPool
 };

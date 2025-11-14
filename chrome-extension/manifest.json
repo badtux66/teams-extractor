@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Teams Message Extractor",
-  "version": "1.0.2",
-  "description": "Extract and monitor Microsoft Teams messages for Claude Desktop integration",
+  "version": "2.0.0",
+  "description": "Extract and monitor Microsoft Teams messages with conversation tracking and deduplication",
   "permissions": [
     "storage",
     "tabs",
@@ -21,7 +21,7 @@
         "https://teams.microsoft.com/*",
         "https://*.teams.microsoft.com/*"
       ],
-      "js": ["content.js"],
+      "js": ["conversation-manager.js", "content.js"],
       "css": ["styles.css"],
       "run_at": "document_idle",
       "all_frames": true,

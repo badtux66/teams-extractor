@@ -1,9 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const Joi = require('joi');
-const { query, transaction } = require('../config/database');
+const { query, transaction, getPool } = require('../config/database');
 const { redis, invalidatePattern } = require('../config/redis');
 const logger = require('../config/logger');
+const { deduplicateMessages, incrementExtractionCount, getDeduplicationStats } = require('../utils/deduplication');
+const { upsertConversation, updateCheckpoint } = require('../utils/conversations');
 
 // Validation schema for batch messages
 const messageSchema = Joi.object({
@@ -28,12 +30,20 @@ const messageSchema = Joi.object({
 const batchSchema = Joi.object({
   messages: Joi.array().items(messageSchema).min(1).max(1000).required(),
   extractionId: Joi.string().required(),
-  metadata: Joi.object().default({})
+  metadata: Joi.object().default({}),
+  // New conversation fields
+  conversationId: Joi.string().allow(null, ''),
+  conversationName: Joi.string().allow(null, ''),
+  conversationType: Joi.string().valid('channel', 'chat', 'meeting', 'direct').allow(null, ''),
+  teamId: Joi.string().allow(null, ''),
+  teamName: Joi.string().allow(null, ''),
+  threadStructure: Joi.array().default([])
 });
 
 /**
  * POST /api/messages/batch
  * Bulk message ingestion from Chrome extension
+ * Now supports conversation grouping and hash-based deduplication
  */
 router.post('/batch', async (req, res) => {
   const startTime = Date.now();
@@ -49,54 +59,90 @@ router.post('/batch', async (req, res) => {
       });
     }
 
-    const { messages, extractionId, metadata } = value;
-    logger.info(`Processing batch of ${messages.length} messages`, { extractionId });
+    const {
+      messages,
+      extractionId,
+      metadata,
+      conversationId,
+      conversationName,
+      conversationType,
+      teamId,
+      teamName
+    } = value;
 
-    // Deduplicate using Redis
-    const uniqueMessages = [];
-    const duplicates = [];
+    logger.info(`Processing batch of ${messages.length} messages`, {
+      extractionId,
+      conversationId,
+      conversationName
+    });
 
-    for (const msg of messages) {
-      const cacheKey = `msg:${msg.messageId}`;
-      const exists = await redis.exists(cacheKey);
+    const pool = getPool();
 
-      if (!exists) {
-        uniqueMessages.push(msg);
-        // Set with 24 hour expiry
-        await redis.setex(cacheKey, 86400, '1');
-      } else {
-        duplicates.push(msg.messageId);
+    // 1. Create or update conversation if provided
+    if (conversationId && conversationName && conversationType) {
+      try {
+        await upsertConversation(pool, {
+          id: conversationId,
+          name: conversationName,
+          type: conversationType,
+          teamId,
+          teamName,
+          metadata
+        });
+        logger.info(`Upserted conversation: ${conversationName}`, { conversationId });
+      } catch (convError) {
+        logger.error('Failed to upsert conversation:', convError);
+        // Continue processing messages even if conversation upsert fails
       }
     }
 
-    logger.info(`Deduplication: ${uniqueMessages.length} unique, ${duplicates.length} duplicates`);
+    // 2. Deduplicate using message hashes (database check)
+    const deduplicationResult = await deduplicateMessages(pool, messages);
+    const { newMessages, duplicates } = deduplicationResult;
 
-    // Batch insert to PostgreSQL
+    logger.info(`Deduplication: ${newMessages.length} new, ${duplicates.length} duplicates`);
+
+    // 3. Update extraction count for duplicates
+    if (duplicates.length > 0) {
+      try {
+        const duplicateHashes = duplicates.map(m => m.message_hash);
+        await incrementExtractionCount(pool, duplicateHashes);
+        logger.info(`Incremented extraction count for ${duplicates.length} duplicates`);
+      } catch (countError) {
+        logger.warn('Failed to increment extraction count:', countError);
+      }
+    }
+
+    // 4. Batch insert new messages to PostgreSQL
     let insertedCount = 0;
     let errorCount = 0;
 
-    if (uniqueMessages.length > 0) {
+    if (newMessages.length > 0) {
       try {
         const result = await transaction(async (client) => {
+          // Now includes conversation_id and message_hash
           const insertQuery = `
             INSERT INTO teams.messages (
               message_id, channel_id, channel_name, content,
               sender_id, sender_name, sender_email, timestamp,
-              url, type, thread_id, attachments, reactions, metadata
-            ) VALUES ${uniqueMessages.map((_, i) => {
-              const base = i * 14;
-              return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13}, $${base + 14})`;
+              url, type, thread_id, attachments, reactions, metadata,
+              conversation_id, message_hash, first_extracted_at
+            ) VALUES ${newMessages.map((_, i) => {
+              const base = i * 17;
+              return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13}, $${base + 14}, $${base + 15}, $${base + 16}, $${base + 17})`;
             }).join(', ')}
             ON CONFLICT (message_id) DO UPDATE SET
               content = EXCLUDED.content,
+              conversation_id = EXCLUDED.conversation_id,
+              extraction_count = teams.messages.extraction_count + 1,
               updated_at = NOW()
             RETURNING id
           `;
 
-          const values = uniqueMessages.flatMap(m => [
+          const values = newMessages.flatMap(m => [
             m.messageId,
-            m.channelId || null,
-            m.channelName || null,
+            m.channelId || conversationId || null,
+            m.channelName || conversationName || null,
             m.content,
             m.sender.id || null,
             m.sender.name,
@@ -107,7 +153,10 @@ router.post('/batch', async (req, res) => {
             m.threadId || null,
             JSON.stringify(m.attachments),
             JSON.stringify(m.reactions),
-            JSON.stringify(m.metadata)
+            JSON.stringify(m.metadata),
+            conversationId || m.channelId || null,
+            m.message_hash,
+            new Date()
           ]);
 
           return await client.query(insertQuery, values);
@@ -116,14 +165,27 @@ router.post('/batch', async (req, res) => {
         insertedCount = result.rowCount;
         logger.info(`Inserted ${insertedCount} messages to database`);
 
-        // Invalidate related caches
+        // 5. Update extraction checkpoint
+        if (conversationId && newMessages.length > 0) {
+          try {
+            await updateCheckpoint(pool, conversationId, newMessages);
+            logger.info(`Updated checkpoint for conversation: ${conversationId}`);
+          } catch (checkpointError) {
+            logger.warn('Failed to update checkpoint:', checkpointError);
+          }
+        }
+
+        // 6. Invalidate related caches
         await invalidatePattern('messages:list:*');
         await invalidatePattern('messages:stats:*');
+        await invalidatePattern('conversations:*');
 
-        // Emit WebSocket event
+        // 7. Emit WebSocket event
         if (req.app.get('io')) {
           req.app.get('io').emit('messages:batch', {
             count: insertedCount,
+            conversationId,
+            conversationName,
             extractionId,
             timestamp: new Date()
           });
@@ -131,7 +193,7 @@ router.post('/batch', async (req, res) => {
 
       } catch (dbError) {
         logger.error('Database insert error:', dbError);
-        errorCount = uniqueMessages.length;
+        errorCount = newMessages.length;
       }
     }
 
@@ -140,11 +202,13 @@ router.post('/batch', async (req, res) => {
     return res.json({
       success: true,
       processed: messages.length,
+      new: newMessages.length,
       inserted: insertedCount,
       duplicates: duplicates.length,
       errors: errorCount,
       processingTime,
-      extractionId
+      extractionId,
+      conversationId: conversationId || null
     });
 
   } catch (error) {
