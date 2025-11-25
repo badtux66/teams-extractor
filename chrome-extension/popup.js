@@ -61,6 +61,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.tabs.create({ url: 'chrome://extensions/?id=' + chrome.runtime.id });
   });
 
+  document.getElementById('resetStateBtn').addEventListener('click', async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    if (tab?.url?.includes('teams.microsoft.com')) {
+      chrome.tabs.sendMessage(tab.id, { type: 'CLEAR_STATE' }, (response) => {
+        if (response?.success) {
+          showNotification('Extraction state reset');
+          updateStatus();
+        } else {
+          const errorMessage = response?.error || 'Failed to reset state';
+          alert(errorMessage);
+        }
+      });
+    } else {
+      alert('Please navigate to Teams web app first');
+    }
+  });
+
   /**
    * Update status display
    */

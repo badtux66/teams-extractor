@@ -129,15 +129,28 @@ const normalizeMessage = (raw: RawMessage): Message => {
 
   const id = raw.id ?? messageId ?? ''
 
+  const preview =
+    firstString(
+      raw.preview,
+      getMetadataString(
+        metadata,
+        'preview',
+        'previewText',
+        'lastMessagePreview',
+        'messagePreview'
+      )
+    ) ?? null
+
   const content =
     firstString(
       raw.content,
       raw.text,
       raw.message,
-      raw.preview,
       raw.body?.content,
-      getMetadataString(metadata, 'preview', 'previewText')
-    ) ?? ''
+      getMetadataString(metadata, 'content', 'message', 'body', 'bodyContent')
+    ) ??
+    preview ??
+    ''
 
   return {
     id,
@@ -150,6 +163,7 @@ const normalizeMessage = (raw: RawMessage): Message => {
         getMetadataString(metadata, 'channel', 'channelName')
       ),
     content,
+    preview,
     sender_id: firstValue(raw.sender_id, raw.senderId, sender?.id ?? null),
     sender_name:
       firstString(raw.sender_name, raw.senderName, raw.author, sender?.name) ?? null,

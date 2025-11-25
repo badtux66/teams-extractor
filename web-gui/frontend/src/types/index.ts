@@ -4,6 +4,7 @@ export interface Message {
   channel_id: string | null
   channel_name: string | null
   content: string
+  preview?: string | null
   sender_id: string | null
   sender_name: string | null
   sender_email: string | null

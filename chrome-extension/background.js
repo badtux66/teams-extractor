@@ -35,7 +35,18 @@ function getBatchEndpoint(customUrl) {
 }
 
 async function handleBatchSendRequest(payload = {}) {
-  const { messages, extractionId, metadata, apiUrl, apiKey } = payload;
+  const {
+    messages,
+    extractionId,
+    metadata,
+    apiUrl,
+    apiKey,
+    conversationId,
+    conversationName,
+    conversationType,
+    teamId,
+    teamName
+  } = payload;
 
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new Error('No messages to send');
@@ -63,6 +74,11 @@ async function handleBatchSendRequest(payload = {}) {
         messages,
         extractionId,
         metadata: metadata || {},
+        conversationId: conversationId || null,
+        conversationName: conversationName || null,
+        conversationType: conversationType || null,
+        teamId: teamId || null,
+        teamName: teamName || null
       }),
     });
   } catch (error) {
@@ -241,19 +257,24 @@ chrome.alarms.create('periodicSync', {
   periodInMinutes: 1
 });
 
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'periodicSync') {
-    // Trigger extraction in all Teams tabs
-    chrome.tabs.query(
-      { url: ['https://teams.microsoft.com/*', 'https://*.teams.microsoft.com/*'] },
-      (tabs) => {
-        tabs.forEach(tab => {
-          chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_NOW' });
-        });
-      }
-    );
-  }
-});
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'periodicSync') {
+      // Trigger extraction in all Teams tabs
+      chrome.tabs.query(
+        { url: ['https://teams.microsoft.com/*', 'https://*.teams.microsoft.com/*'] },
+        (tabs) => {
+          tabs.forEach(tab => {
+            chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_NOW' }, () => {
+              const err = chrome.runtime.lastError;
+              if (err) {
+                console.debug('[Teams Extractor] Unable to trigger extraction on tab', tab.id, err.message);
+              }
+            });
+          });
+        }
+      );
+    }
+  });
 
 /**
  * Handle tab updates (navigate to Teams)
@@ -261,7 +282,14 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && /https:\/\/([\w.-]+\.)?teams\.microsoft\.com/i.test(tab.url || '')) {
     console.log('Teams tab loaded:', tabId);
-    updateBadge('⟳', 'gray');
+    chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_NOW' }, () => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        console.debug('[Teams Extractor] Unable to auto-extract on tab', tabId, err.message);
+      } else {
+        updateBadge('⟳', 'gray');
+      }
+    });
   }
 });
 
@@ -270,11 +298,16 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
  */
 async function checkBackendHealth() {
   try {
-    const healthUrl = `${sanitizeApiUrl(config.apiUrl || DEFAULT_API_URL)}/health`;
-    const response = await fetch(healthUrl);
+    const base = sanitizeApiUrl(config.apiUrl || DEFAULT_API_URL);
+    if (!base) {
+      console.warn('Backend health check skipped: API URL not configured');
+      return false;
+    }
+    const healthUrl = `${base}/health`;
+    const response = await fetch(healthUrl, { method: 'GET' });
     return response.ok;
   } catch (error) {
-    console.error('Backend health check failed:', error);
+    console.error('Backend health check failed:', error?.message || error);
     return false;
   }
 }

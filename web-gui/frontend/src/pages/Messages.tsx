@@ -40,6 +40,146 @@ type MessageListMeta = {
   offset: number
 }
 
+type MessageMetadata = Record<string, unknown> | null | undefined
+
+const stringFromValue = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const nested = stringFromValue(item)
+      if (nested) {
+        return nested
+      }
+    }
+    return null
+  }
+
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    for (const key of ['name', 'displayName', 'title', 'text', 'value']) {
+      const nested = stringFromValue(record[key])
+      if (nested) {
+        return nested
+      }
+    }
+  }
+
+  return null
+}
+
+const sanitizeText = (value?: string | null): string | null => {
+  if (!value) return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  if (trimmed === '—') return null
+  if (trimmed.toLowerCase() === 'unknown') return null
+  return trimmed
+}
+
+const getMetadataStringValue = (
+  metadata: MessageMetadata,
+  ...keys: string[]
+): string | null => {
+  if (!metadata) return null
+
+  for (const key of keys) {
+    const path = key.split('.')
+    let current: unknown = metadata
+
+    for (const segment of path) {
+      if (!current || typeof current !== 'object') {
+        current = null
+        break
+      }
+
+      current = (current as Record<string, unknown>)[segment]
+    }
+
+    const result = stringFromValue(current)
+    if (result) {
+      return result
+    }
+  }
+
+  return null
+}
+
+const resolveSenderName = (message: Message): string | null => {
+  return (
+    sanitizeText(message.sender_name) ??
+    getMetadataStringValue(
+      message.metadata,
+      'sender',
+      'sender.name',
+      'sender.displayName',
+      'senderName',
+      'author',
+      'author.name',
+      'from',
+      'from.name',
+      'organizer',
+      'owner'
+    )
+  )
+}
+
+const resolveSenderEmail = (message: Message): string | null => {
+  return (
+    sanitizeText(message.sender_email) ??
+    getMetadataStringValue(
+      message.metadata,
+      'senderEmail',
+      'sender.email',
+      'authorEmail',
+      'author.email',
+      'fromEmail',
+      'from.email',
+      'email'
+    )
+  )
+}
+
+const getChannelDisplayName = (message: Message): string => {
+  const direct = sanitizeText(message.channel_name)
+  const metadataChannel = getMetadataStringValue(
+    message.metadata,
+    'conversation_name',
+    'conversationName',
+    'channel',
+    'channel_name',
+    'channelName',
+    'chatName',
+    'threadName',
+    'groupName',
+    'teamName',
+    'conversation.title'
+  )
+
+  return direct ?? metadataChannel ?? resolveSenderName(message) ?? '—'
+}
+
+const getPreviewText = (message: Message): string => {
+  const preview =
+    sanitizeText(message.preview) ??
+    getMetadataStringValue(
+      message.metadata,
+      'preview',
+      'previewText',
+      'lastMessagePreview',
+      'messagePreview'
+    )
+
+  return preview ?? '—'
+}
+
+const getMessageContent = (message: Message): string => {
+  return sanitizeText(message.content) ?? '—'
+}
+
 export default function Messages() {
   const [messages, setMessages] = useState<Message[]>([])
   const [filteredMessages, setFilteredMessages] = useState<Message[]>([])
@@ -250,57 +390,76 @@ export default function Messages() {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredMessages.map((message) => (
-                <TableRow key={message.id} hover>
-                  <TableCell>
-                    <Typography variant="body2" fontWeight="medium">
-                      {message.message_id || message.id}
-                    </Typography>
-                    {message.url && (
-                      <Typography variant="caption" color="text.secondary">
-                        {message.url}
-                      </Typography>
-                    )}
-                  </TableCell>
-                  <TableCell>{message.channel_name || '—'}</TableCell>
-                  <TableCell>
-                    <Typography variant="body2">{message.sender_name || '—'}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {message.sender_email || '—'}
-                    </Typography>
-                  </TableCell>
-                  <TableCell sx={{ maxWidth: 320 }}>
-                    <Typography variant="body2" noWrap>
-                      {message.content}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Chip label={message.type || 'message'} size="small" variant="outlined" />
-                  </TableCell>
-                  <TableCell>{formatTimestamp(message.timestamp)}</TableCell>
-                  <TableCell>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleViewDetails(message)}
-                      title="View Details"
-                    >
-                      <Visibility fontSize="small" />
-                    </IconButton>
-                    {message.url && (
-                      <IconButton
-                        component="a"
-                        href={message.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        size="small"
-                        title="Open in Teams"
+              filteredMessages.map((message) => {
+                const messageContent = getMessageContent(message)
+                const channelLabel = getChannelDisplayName(message)
+                const senderName = resolveSenderName(message) ?? '—'
+                const senderEmail = resolveSenderEmail(message)
+                const previewText = getPreviewText(message)
+
+                return (
+                  <TableRow key={message.id} hover>
+                    <TableCell sx={{ maxWidth: 360 }}>
+                      <Typography
+                        variant="body2"
+                        fontWeight="medium"
+                        sx={{ whiteSpace: 'pre-line' }}
                       >
-                        <OpenInNew fontSize="small" />
+                        {messageContent}
+                      </Typography>
+                      {(message.message_id || message.id) && (
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          {message.message_id || message.id}
+                        </Typography>
+                      )}
+                      {message.url && (
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          {message.url}
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>{channelLabel}</TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{senderName}</Typography>
+                      {senderEmail && (
+                        <Typography variant="caption" color="text.secondary">
+                          {senderEmail}
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell sx={{ maxWidth: 320 }}>
+                      <Typography variant="body2" noWrap>
+                        {previewText}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip label={message.type || 'message'} size="small" variant="outlined" />
+                    </TableCell>
+                    <TableCell>{formatTimestamp(message.timestamp)}</TableCell>
+                    <TableCell>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleViewDetails(message)}
+                        title="View Details"
+                      >
+                        <Visibility fontSize="small" />
                       </IconButton>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))
+                      {message.url && (
+                        <IconButton
+                          component="a"
+                          href={message.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          size="small"
+                          title="Open in Teams"
+                        >
+                          <OpenInNew fontSize="small" />
+                        </IconButton>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )
+              })
             )}
           </TableBody>
         </Table>

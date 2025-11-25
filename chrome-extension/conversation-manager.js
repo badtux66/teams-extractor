@@ -249,6 +249,68 @@ class ConversationManager {
   }
 
   /**
+   * Collect possible identifiers for a message
+   * @param {Object} message
+   * @returns {string[]} identifiers
+   */
+  getMessageIdentifiers(message) {
+    if (!message) return [];
+    const candidates = [
+      message.id,
+      message.messageId,
+      message.message_id,
+      message.metadata?.messageId,
+      message.metadata?.message_id
+    ];
+
+    return candidates
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter((value) => value.length > 0);
+  }
+
+  /**
+   * Check if message matches the provided identifier
+   */
+  isMatchingMessageId(message, identifier) {
+    if (!identifier) return false;
+    const ids = this.getMessageIdentifiers(message);
+    return ids.some((id) => id === identifier);
+  }
+
+  /**
+   * Safely parse a timestamp-like value
+   * @param {string|Date|null|undefined} value
+   * @returns {number|null} Timestamp in ms
+   */
+  getTimestampMillis(value) {
+    if (!value) return null;
+    const date = value instanceof Date ? value : new Date(value);
+    const time = date.getTime();
+    return Number.isNaN(time) ? null : time;
+  }
+
+  /**
+   * Retrieve comparable timestamp info for a message
+   * Falls back to extractedAt when message timestamp is not parsable
+   * @param {Object} message
+   * @returns {{millis:number, iso:string}|null}
+   */
+  getMessageTimeInfo(message) {
+    if (!message) return null;
+    const sources = ['timestamp', 'extractedAt', 'extracted_at'];
+    for (const key of sources) {
+      const millis = this.getTimestampMillis(message[key]);
+      if (millis !== null) {
+        return {
+          millis,
+          iso: new Date(millis).toISOString()
+        };
+      }
+    }
+    return null;
+  }
+
+  /**
    * Check if a message has already been extracted
    */
   isMessageExtracted(messageId) {
@@ -285,15 +347,36 @@ class ConversationManager {
       return;
     }
 
-    // Find latest message by timestamp
-    const sortedMessages = [...messages].sort((a, b) =>
-      new Date(b.timestamp) - new Date(a.timestamp)
-    );
-    const latestMessage = sortedMessages[0];
+    let latestInfo = null;
+    let fallbackMessage = null;
+    let identifierForCheckpoint = null;
+
+    messages.forEach(message => {
+      if (!fallbackMessage) {
+        fallbackMessage = message;
+      }
+      const info = this.getMessageTimeInfo(message);
+      const ids = this.getMessageIdentifiers(message);
+      if (!identifierForCheckpoint && ids.length > 0) {
+        identifierForCheckpoint = ids[0];
+      }
+      if (info && (!latestInfo || info.millis > latestInfo.millis)) {
+        latestInfo = { ...info, message };
+        if (ids.length > 0) {
+          identifierForCheckpoint = ids[0];
+        }
+      }
+    });
+
+    const referenceMessage = latestInfo?.message || fallbackMessage;
+    const referenceInfo = latestInfo || this.getMessageTimeInfo(referenceMessage);
 
     const checkpoint = {
-      lastMessageId: latestMessage.id || latestMessage.messageId,
-      lastTimestamp: latestMessage.timestamp,
+      lastMessageId:
+        identifierForCheckpoint ||
+        this.getMessageIdentifiers(referenceMessage)[0] ||
+        null,
+      lastTimestamp: referenceInfo?.iso || new Date().toISOString(),
       lastExtractionTime: new Date().toISOString(),
       totalExtracted: (this.checkpoints.get(conversationId)?.totalExtracted || 0) + messages.length
     };
@@ -315,19 +398,55 @@ class ConversationManager {
     if (!convId) return messages;
 
     const checkpoint = this.getCheckpoint(convId);
-    if (!checkpoint.lastTimestamp) {
-      // No checkpoint, all messages are new
+    if (!checkpoint.lastTimestamp && !checkpoint.lastMessageId) {
+      // No checkpoint data, all messages are new
       return messages;
     }
 
-    const checkpointTime = new Date(checkpoint.lastTimestamp);
+    // First try ID-based filtering
+    if (checkpoint.lastMessageId) {
+      const idFiltered = [];
+      let seenLast = false;
+
+      messages.forEach((msg) => {
+        if (!seenLast) {
+          if (this.isMatchingMessageId(msg, checkpoint.lastMessageId)) {
+            seenLast = true;
+          }
+          return;
+        }
+        idFiltered.push(msg);
+      });
+
+      if (seenLast) {
+        console.log('[ConversationManager] Filtered messages by ID checkpoint:', {
+          total: messages.length,
+          new: idFiltered.length,
+          lastMessageId: checkpoint.lastMessageId
+        });
+        return idFiltered;
+      }
+    }
+
+    if (!checkpoint.lastTimestamp) {
+      return messages;
+    }
+
+    const checkpointTime = this.getTimestampMillis(checkpoint.lastTimestamp);
+    if (checkpointTime === null) {
+      return messages;
+    }
+
     const newMessages = messages.filter(msg => {
-      const msgTime = new Date(msg.timestamp);
+      const info = this.getMessageTimeInfo(msg);
+      if (!info) {
+        return true;
+      }
       // Only include messages newer than checkpoint
-      return msgTime > checkpointTime;
+      return info.millis > checkpointTime;
     });
 
-    console.log('[ConversationManager] Filtered messages:', {
+    console.log('[ConversationManager] Filtered messages by timestamp:', {
       total: messages.length,
       new: newMessages.length,
       checkpoint: checkpoint.lastTimestamp
