@@ -94,6 +94,30 @@ router.post('/batch', async (req, res) => {
         logger.error('Failed to upsert conversation:', convError);
         // Continue processing messages even if conversation upsert fails
       }
+    } else {
+      // Fallback: Try to upsert conversation from message channelId if available
+      const channelIds = [...new Set(messages.map(m => m.channelId).filter(Boolean))];
+      if (channelIds.length === 1 && !conversationId) {
+        // If all messages are from same channel, treat it as conversation
+        const fallbackId = channelIds[0];
+        const fallbackName = messages[0].channelName || 'Unknown Channel';
+        try {
+          await upsertConversation(pool, {
+            id: fallbackId,
+            name: fallbackName,
+            type: 'channel',
+            teamId: null,
+            teamName: null,
+            metadata: { createdFrom: 'fallback' }
+          });
+          logger.info(`Upserted fallback conversation: ${fallbackName}`, { conversationId: fallbackId });
+          // Update conversationId for the batch context
+          // Note: We can't easily update the const conversationId variable, 
+          // but the insert logic below uses m.channelId as fallback for conversation_id column
+        } catch (err) {
+          logger.warn('Failed to upsert fallback conversation:', err);
+        }
+      }
     }
 
     // 2. Deduplicate using message hashes (database check)
@@ -128,9 +152,9 @@ router.post('/batch', async (req, res) => {
               url, type, thread_id, attachments, reactions, metadata,
               conversation_id, message_hash, first_extracted_at
             ) VALUES ${newMessages.map((_, i) => {
-              const base = i * 17;
-              return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13}, $${base + 14}, $${base + 15}, $${base + 16}, $${base + 17})`;
-            }).join(', ')}
+            const base = i * 17;
+            return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13}, $${base + 14}, $${base + 15}, $${base + 16}, $${base + 17})`;
+          }).join(', ')}
             ON CONFLICT (message_id) DO UPDATE SET
               content = EXCLUDED.content,
               conversation_id = EXCLUDED.conversation_id,

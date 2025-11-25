@@ -617,7 +617,7 @@
       const result = await dispatchBatchToBackground({
         messages: transformedMessages,
         extractionId,
-        conversationId: conversation?.id || null,
+        conversationId: conversation?.id || extractChannelId() || null,
         conversationName: conversation?.name || extractChannelName(),
         conversationType: conversation?.type || 'channel',
         teamId: conversation?.teamId || null,
