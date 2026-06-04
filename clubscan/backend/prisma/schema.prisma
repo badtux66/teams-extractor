@@ -5,7 +5,7 @@
 
 generator client {
   provider        = "prisma-client-js"
-  previewFeatures = ["postgresqlExtensions", "fullTextSearchPostgres"]
+  previewFeatures = ["postgresqlExtensions", "fullTextSearch"]
 }
 
 datasource db {
@@ -381,6 +381,7 @@ model Venue {
   events     Event[]
   reviews    Review[]
   score      VenueScore?
+  incidents  IncidentReport[]
 
   @@index([city, status])
   @@index([type, status])
@@ -686,6 +687,7 @@ model IncidentReport {
   updatedAt   DateTime         @updatedAt
 
   reporter   User?       @relation("IncidentReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  venue      Venue?      @relation(fields: [venueId], references: [id], onDelete: SetNull)
   escalation Escalation?
 
   @@index([state, severity])

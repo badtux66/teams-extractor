@@ -15,9 +15,18 @@ import { RolesGuard } from '@/platform/security/roles.guard';
 import { AllExceptionsFilter } from '@/platform/http/all-exceptions.filter';
 
 import { AuthModule } from '@/modules/auth/auth.module';
+import { UsersModule } from '@/modules/users/users.module';
+import { ProfilesModule } from '@/modules/profiles/profiles.module';
 import { VenuesModule } from '@/modules/venues/venues.module';
+import { EventsModule } from '@/modules/events/events.module';
 import { ReviewsModule } from '@/modules/reviews/reviews.module';
 import { ScoringModule } from '@/modules/scoring/scoring.module';
+import { SearchModule } from '@/modules/search/search.module';
+import { ModerationModule } from '@/modules/moderation/moderation.module';
+import { SafetyModule } from '@/modules/safety/safety.module';
+import { NotificationsModule } from '@/modules/notifications/notifications.module';
+import { AnalyticsModule } from '@/modules/analytics/analytics.module';
+import { MediaModule } from '@/modules/media/media.module';
 import { HealthModule } from '@/modules/health/health.module';
 
 @Module({
@@ -33,9 +42,18 @@ import { HealthModule } from '@/modules/health/health.module';
 
     // Feature modules (bounded contexts)
     AuthModule,
+    UsersModule,
+    ProfilesModule,
     VenuesModule,
+    EventsModule,
     ReviewsModule,
     ScoringModule,
+    SearchModule,
+    ModerationModule,
+    SafetyModule,
+    NotificationsModule,
+    AnalyticsModule,
+    MediaModule,
     HealthModule,
   ],
   providers: [

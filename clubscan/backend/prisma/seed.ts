@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole, VenueType } from '@prisma/client';
+import { Prisma, PrismaClient, UserRole, VenueType } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { v7 as uuidv7 } from 'uuid';
 import { DEFAULT_SCORING_CONFIG } from '../src/platform/config/scoring-config';
@@ -28,10 +28,11 @@ async function main(): Promise<void> {
   }
 
   // Singleton app config (scoring weights/thresholds).
+  const scoringConfig = { scoring: DEFAULT_SCORING_CONFIG } as unknown as Prisma.InputJsonValue;
   await prisma.appConfig.upsert({
     where: { id: 1 },
-    update: { config: { scoring: DEFAULT_SCORING_CONFIG } },
-    create: { id: 1, config: { scoring: DEFAULT_SCORING_CONFIG } },
+    update: { config: scoringConfig },
+    create: { id: 1, config: scoringConfig },
   });
 
   // Super admin (env-driven).

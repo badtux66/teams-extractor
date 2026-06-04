@@ -93,7 +93,10 @@ export class ModerationService {
         resolution: dto.resolution ?? existing.resolution,
         assignedModeratorId: dto.assignToSelf ? actor.id : existing.assignedModeratorId,
         resolvedAt:
-          dto.state && [ModerationState.ACTIONED, ModerationState.DISMISSED, ModerationState.CLOSED].includes(dto.state)
+          dto.state &&
+          ([ModerationState.ACTIONED, ModerationState.DISMISSED, ModerationState.CLOSED] as ModerationState[]).includes(
+            dto.state,
+          )
             ? new Date()
             : existing.resolvedAt,
       },
