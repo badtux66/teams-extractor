@@ -1,0 +1,31 @@
+{
+  "common": {
+    "appName": "ClubScan",
+    "retry": "Try again",
+    "loading": "Loading…"
+  },
+  "auth": {
+    "welcomeTitle": "Find a safer night out",
+    "welcomeSubtitle": "Discover venues, see real safety signals, and make informed decisions.",
+    "login": "Log in",
+    "register": "Create account",
+    "email": "Email",
+    "password": "Password",
+    "username": "Username",
+    "forgotPassword": "Forgot password?",
+    "continueWithGoogle": "Continue with Google",
+    "continueWithApple": "Continue with Apple"
+  },
+  "discover": {
+    "title": "Discover",
+    "nearby": "Near you",
+    "topVenues": "Top rated",
+    "empty": "No venues found"
+  },
+  "venue": {
+    "score": "ClubScan Score",
+    "reviews": "Reviews",
+    "safetyAdvisory": "Safety advisory",
+    "writeReview": "Write a review"
+  }
+}

@@ -1,0 +1,85 @@
+# ClubScan — local development stack (Phase 5 §2)
+# Postgres (PostGIS), Redis, MinIO (S3), Mailhog, and the API.
+version: "3.9"
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: clubscan
+      POSTGRES_PASSWORD: clubscan
+      POSTGRES_DB: clubscan
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clubscan"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: clubscan
+      MINIO_ROOT_PASSWORD: clubscan-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+
+  createbuckets:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until (mc alias set local http://minio:9000 clubscan clubscan-secret) do sleep 2; done;
+      mc mb -p local/clubscan-media || true;
+      mc anonymous set none local/clubscan-media;
+      exit 0;
+      "
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  api:
+    build:
+      context: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://clubscan:clubscan@postgres:5432/clubscan?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: dev-only-secret-please-change-me-32chars
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: clubscan
+      S3_SECRET_KEY: clubscan-secret
+      S3_BUCKET: clubscan-media
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
+  miniodata:

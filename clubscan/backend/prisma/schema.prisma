@@ -1,0 +1,817 @@
+// ClubScan — Canonical Prisma Schema (Phase 2 / Phase 8)
+// PostgreSQL 16. UUID v7 PKs are generated in the application layer (time-ordered).
+// Geospatial point columns are added via raw SQL migration (PostGIS) — see migrations.
+// Module boundaries (Phase 1 bounded contexts) are noted in section comments.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions", "fullTextSearchPostgres"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [citext, pg_trgm, pgcrypto]
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum UserRole {
+  USER
+  MODERATOR
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+  SHADOW_BANNED
+  DELETED
+}
+
+enum VerificationStatus {
+  NONE
+  PENDING
+  VERIFIED
+}
+
+enum OAuthProvider {
+  GOOGLE
+  APPLE
+}
+
+enum DevicePlatform {
+  IOS
+  ANDROID
+}
+
+enum VenueType {
+  CLUB
+  BAR
+  FESTIVAL
+  EVENT
+  LOUNGE
+}
+
+enum VenueStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  ENDED
+}
+
+enum ReviewStatus {
+  PENDING
+  PUBLISHED
+  HELD
+  REMOVED
+}
+
+enum ModerationStatus {
+  PENDING
+  APPROVED
+  FLAGGED
+  REJECTED
+}
+
+enum ReportTargetType {
+  REVIEW
+  USER
+  VENUE
+  EVENT
+}
+
+enum ReportReason {
+  SPAM
+  HARASSMENT
+  HATE_SPEECH
+  MISINFORMATION
+  INAPPROPRIATE_CONTENT
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum ModerationState {
+  TRIAGE
+  INVESTIGATING
+  ACTIONED
+  DISMISSED
+  CLOSED
+}
+
+enum SanctionType {
+  WARNING
+  TEMP_BAN
+  PERMA_BAN
+  SHADOW_BAN
+  CONTENT_REMOVAL
+}
+
+enum IncidentCategory {
+  HARASSMENT
+  VIOLENCE
+  DISCRIMINATION
+  UNSAFE_ENVIRONMENT
+  OTHER
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentState {
+  SUBMITTED
+  TRIAGED
+  INVESTIGATING
+  ACTIONED
+  DISMISSED
+  CLOSED
+}
+
+enum NotificationType {
+  NEW_FOLLOWER
+  REVIEW_PUBLISHED
+  REVIEW_HELPFUL
+  EVENT_REMINDER
+  MODERATION_RESULT
+  SAFETY_UPDATE
+  SYSTEM
+}
+
+enum MediaStatus {
+  PENDING
+  READY
+  FAILED
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+  TIKTOK
+  X
+  SOUNDCLOUD
+  WEBSITE
+}
+
+// ============================================================================
+// CONTEXT: IAM (Identity & Access)
+// ============================================================================
+
+model User {
+  id              String     @id @db.Uuid
+  email           String     @unique @db.Citext
+  passwordHash    String? // null for OAuth-only accounts
+  emailVerifiedAt DateTime?
+  role            UserRole   @default(USER)
+  status          UserStatus @default(ACTIVE)
+  reputationScore Int        @default(0) // denormalized cache; ledger = ReputationEvent
+  locale          String     @default("en")
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  deletedAt       DateTime?
+
+  profile           Profile?
+  oauthAccounts     OAuthAccount[]
+  sessions          Session[]
+  devices           Device[]
+  reviews           Review[]
+  reviewHelpfuls    ReviewHelpful[]
+  savedEvents       SavedEvent[]
+  followers         Follow[]            @relation("Following")
+  following         Follow[]            @relation("Follower")
+  reputationEvents  ReputationEvent[]
+  reportsFiled      Report[]            @relation("Reporter")
+  incidentReports   IncidentReport[]    @relation("IncidentReporter")
+  sanctions         Sanction[]          @relation("SanctionTarget")
+  sanctionsIssued   Sanction[]          @relation("SanctionIssuer")
+  notifications     Notification[]
+  feedEntries       FeedEntry[]         @relation("FeedOwner")
+  feedActorEntries  FeedEntry[]         @relation("FeedActor")
+  auditLogs         AuditLogEntry[]
+  mediaAssets       MediaAsset[]
+  assignedCases     ModerationCase[]    @relation("CaseAssignee")
+  handledEscalation Escalation[]        @relation("EscalationHandler")
+
+  @@index([status])
+  @@index([role])
+  @@map("users")
+}
+
+model OAuthAccount {
+  id                String        @id @db.Uuid
+  userId            String        @db.Uuid
+  provider          OAuthProvider
+  providerAccountId String
+  createdAt         DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("oauth_accounts")
+}
+
+model Session {
+  id               String    @id @db.Uuid
+  userId           String    @db.Uuid
+  deviceId         String?   @db.Uuid
+  refreshTokenHash String    @unique // SHA-256 of refresh token; rotated on use
+  familyId         String    @db.Uuid // token family for reuse detection
+  ip               String?
+  userAgent        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("sessions")
+}
+
+model Device {
+  id         String         @id @db.Uuid
+  userId     String         @db.Uuid
+  platform   DevicePlatform
+  pushToken  String? // FCM token
+  name       String?
+  lastSeenAt DateTime       @default(now())
+  createdAt  DateTime       @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions Session[]
+
+  @@unique([userId, pushToken])
+  @@index([userId])
+  @@map("devices")
+}
+
+model EmailVerificationToken {
+  id        String    @id @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// ============================================================================
+// CONTEXT: Profile & Reputation
+// ============================================================================
+
+model Profile {
+  id                 String             @id @db.Uuid
+  userId             String             @unique @db.Uuid
+  username           String             @unique @db.Citext
+  displayName        String?
+  bio                String?
+  avatarUrl          String?
+  verificationStatus VerificationStatus @default(NONE)
+  isPrivate          Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  socialLinks SocialLink[]
+
+  @@map("profiles")
+}
+
+model SocialLink {
+  id        String         @id @db.Uuid
+  profileId String         @db.Uuid
+  platform  SocialPlatform
+  url       String
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@map("social_links")
+}
+
+model Follow {
+  id          String   @id @db.Uuid
+  followerId  String   @db.Uuid
+  followingId String   @db.Uuid
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+  @@map("follows")
+}
+
+model ReputationEvent {
+  id        String   @id @db.Uuid
+  userId    String   @db.Uuid
+  delta     Int
+  reason    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("reputation_events")
+}
+
+// ============================================================================
+// CONTEXT: Venue Catalog
+// ============================================================================
+
+model Venue {
+  id           String      @id @db.Uuid
+  slug         String      @unique
+  name         String
+  description  String?
+  type         VenueType
+  status       VenueStatus @default(PUBLISHED)
+  addressLine  String?
+  city         String
+  country      String
+  postalCode   String?
+  latitude     Decimal     @db.Decimal(9, 6)
+  longitude    Decimal     @db.Decimal(9, 6)
+  capacity     Int?
+  coverPhotoUrl String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  deletedAt    DateTime?
+
+  photos     VenuePhoto[]
+  hours      OperatingHour[]
+  genres     VenueGenre[]
+  events     Event[]
+  reviews    Review[]
+  score      VenueScore?
+
+  @@index([city, status])
+  @@index([type, status])
+  @@map("venues")
+}
+
+model VenuePhoto {
+  id        String   @id @db.Uuid
+  venueId   String   @db.Uuid
+  url       String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@index([venueId])
+  @@map("venue_photos")
+}
+
+model OperatingHour {
+  id        String  @id @db.Uuid
+  venueId   String  @db.Uuid
+  weekday   Int // 0=Sunday..6=Saturday
+  openMin   Int // minutes from midnight
+  closeMin  Int // may exceed 1440 for overnight
+  isClosed  Boolean @default(false)
+
+  venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@unique([venueId, weekday])
+  @@map("operating_hours")
+}
+
+model Genre {
+  id     String       @id @db.Uuid
+  name   String       @unique
+  slug   String       @unique
+  venues VenueGenre[]
+  events EventGenre[]
+
+  @@map("genres")
+}
+
+model VenueGenre {
+  venueId String @db.Uuid
+  genreId String @db.Uuid
+
+  venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  genre Genre @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([venueId, genreId])
+  @@index([genreId])
+  @@map("venue_genres")
+}
+
+model Event {
+  id            String      @id @db.Uuid
+  venueId       String      @db.Uuid
+  title         String
+  description   String?
+  startsAt      DateTime
+  endsAt        DateTime?
+  lineup        Json? // [{ artist, time }]
+  ticketUrl     String?
+  coverPhotoUrl String?
+  status        EventStatus @default(PUBLISHED)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  deletedAt     DateTime?
+
+  venue       Venue        @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  genres      EventGenre[]
+  photos      EventPhoto[]
+  savedEvents SavedEvent[]
+
+  @@index([venueId])
+  @@index([startsAt, status])
+  @@map("events")
+}
+
+model EventPhoto {
+  id      String @id @db.Uuid
+  eventId String @db.Uuid
+  url     String
+  position Int   @default(0)
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@map("event_photos")
+}
+
+model EventGenre {
+  eventId String @db.Uuid
+  genreId String @db.Uuid
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  genre Genre @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, genreId])
+  @@index([genreId])
+  @@map("event_genres")
+}
+
+model SavedEvent {
+  id        String   @id @db.Uuid
+  userId    String   @db.Uuid
+  eventId   String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+  @@index([eventId])
+  @@map("saved_events")
+}
+
+// ============================================================================
+// CONTEXT: Review & Scoring
+// ============================================================================
+
+model Review {
+  id               String           @id @db.Uuid
+  userId           String           @db.Uuid
+  venueId          String           @db.Uuid
+  body             String
+  language         String           @default("en")
+  status           ReviewStatus     @default(PENDING)
+  moderationStatus ModerationStatus @default(PENDING)
+  helpfulCount     Int              @default(0)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  deletedAt        DateTime?
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venue    Venue           @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  rating   ReviewRating?
+  photos   ReviewPhoto[]
+  edits    ReviewEdit[]
+  helpfuls ReviewHelpful[]
+
+  @@unique([userId, venueId]) // one editable review per user per venue
+  @@index([venueId, status, createdAt])
+  @@map("reviews")
+}
+
+model ReviewRating {
+  reviewId        String @id @db.Uuid
+  security        Int // 1..5
+  staffBehavior   Int
+  fairPricing     Int
+  crowdQuality    Int
+  musicQuality    Int
+  soundSystem     Int
+  cleanliness     Int
+  safetyForWomen  Int
+  atmosphere      Int
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@map("review_ratings")
+}
+
+model ReviewPhoto {
+  id        String   @id @db.Uuid
+  reviewId  String   @db.Uuid
+  url       String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+  @@map("review_photos")
+}
+
+model ReviewEdit {
+  id          String   @id @db.Uuid
+  reviewId    String   @db.Uuid
+  bodySnapshot String
+  ratingSnapshot Json
+  editedAt    DateTime @default(now())
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+  @@map("review_edits")
+}
+
+model ReviewHelpful {
+  id        String   @id @db.Uuid
+  reviewId  String   @db.Uuid
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, userId])
+  @@map("review_helpful")
+}
+
+// CQRS read model — rebuilt from ReviewPublished/Removed/Edited events
+model VenueScore {
+  venueId             String   @id @db.Uuid
+  score               Decimal  @db.Decimal(5, 2) // composite 0..100
+  reviewCount         Int      @default(0)
+  avgSecurity         Decimal  @db.Decimal(4, 2) @default(0)
+  avgStaffBehavior    Decimal  @db.Decimal(4, 2) @default(0)
+  avgFairPricing      Decimal  @db.Decimal(4, 2) @default(0)
+  avgCrowdQuality     Decimal  @db.Decimal(4, 2) @default(0)
+  avgMusicQuality     Decimal  @db.Decimal(4, 2) @default(0)
+  avgSoundSystem      Decimal  @db.Decimal(4, 2) @default(0)
+  avgCleanliness      Decimal  @db.Decimal(4, 2) @default(0)
+  avgSafetyForWomen   Decimal  @db.Decimal(4, 2) @default(0)
+  avgAtmosphere       Decimal  @db.Decimal(4, 2) @default(0)
+  safetyAdvisory      Boolean  @default(false)
+  lastComputedAt      DateTime @default(now())
+
+  venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@index([score])
+  @@map("venue_scores")
+}
+
+// ============================================================================
+// CONTEXT: Moderation & Trust
+// ============================================================================
+
+model Report {
+  id         String           @id @db.Uuid
+  reporterId String           @db.Uuid
+  targetType ReportTargetType
+  targetId   String           @db.Uuid
+  reason     ReportReason
+  details    String?
+  status     ReportStatus     @default(OPEN)
+  createdAt  DateTime         @default(now())
+
+  reporter User            @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  case     ModerationCase?
+
+  @@index([targetType, targetId])
+  @@index([status])
+  @@map("reports")
+}
+
+model ModerationCase {
+  id                 String          @id @db.Uuid
+  reportId           String?         @unique @db.Uuid
+  targetType         ReportTargetType
+  targetId           String          @db.Uuid
+  state              ModerationState @default(TRIAGE)
+  assignedModeratorId String?        @db.Uuid
+  aiVerdict          Json? // { provider, scores, labels }
+  resolution         String?
+  resolvedAt         DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  report    Report?    @relation(fields: [reportId], references: [id], onDelete: SetNull)
+  assignee  User?      @relation("CaseAssignee", fields: [assignedModeratorId], references: [id], onDelete: SetNull)
+  sanctions Sanction[]
+
+  @@index([state, createdAt])
+  @@map("moderation_cases")
+}
+
+model Sanction {
+  id           String       @id @db.Uuid
+  targetUserId String       @db.Uuid
+  caseId       String?      @db.Uuid
+  type         SanctionType
+  reason       String
+  issuedById   String       @db.Uuid
+  expiresAt    DateTime?
+  createdAt    DateTime     @default(now())
+
+  targetUser User            @relation("SanctionTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  issuedBy   User            @relation("SanctionIssuer", fields: [issuedById], references: [id], onDelete: Restrict)
+  case       ModerationCase? @relation(fields: [caseId], references: [id], onDelete: SetNull)
+
+  @@index([targetUserId])
+  @@map("sanctions")
+}
+
+// ============================================================================
+// CONTEXT: Safety & Incidents (access-restricted)
+// ============================================================================
+
+model IncidentReport {
+  id          String           @id @db.Uuid
+  reporterId  String?          @db.Uuid // null if anonymous
+  venueId     String?          @db.Uuid
+  category    IncidentCategory
+  severity    IncidentSeverity @default(MEDIUM)
+  description String
+  occurredAt  DateTime?
+  isAnonymous Boolean          @default(false)
+  state       IncidentState    @default(SUBMITTED)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  reporter   User?       @relation("IncidentReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  escalation Escalation?
+
+  @@index([state, severity])
+  @@index([venueId])
+  @@map("incident_reports")
+}
+
+model Escalation {
+  id          String    @id @db.Uuid
+  incidentId  String    @unique @db.Uuid
+  level       Int       @default(1)
+  slaDueAt    DateTime
+  escalatedAt DateTime?
+  handledById String?   @db.Uuid
+  outcome     String?
+  createdAt   DateTime  @default(now())
+
+  incident  IncidentReport @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  handledBy User?          @relation("EscalationHandler", fields: [handledById], references: [id], onDelete: SetNull)
+
+  @@index([slaDueAt])
+  @@map("escalations")
+}
+
+// ============================================================================
+// CONTEXT: Notifications & Feed
+// ============================================================================
+
+model Notification {
+  id        String           @id @db.Uuid
+  userId    String           @db.Uuid
+  type      NotificationType
+  payload   Json
+  readAt    DateTime?
+  sentPush  Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+// CQRS read model — fan-out-on-write activity feed
+model FeedEntry {
+  id         String   @id @db.Uuid
+  ownerId    String   @db.Uuid // whose feed this entry belongs to
+  actorId    String   @db.Uuid
+  verb       String // e.g. "reviewed", "followed", "saved"
+  objectType String
+  objectId   String   @db.Uuid
+  createdAt  DateTime @default(now())
+
+  owner User @relation("FeedOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  actor User @relation("FeedActor", fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId, createdAt])
+  @@map("feed_entries")
+}
+
+// ============================================================================
+// CONTEXT: Analytics & Shared Kernel (append-only / platform)
+// ============================================================================
+
+model AnalyticsEvent {
+  id         String   @id @db.Uuid
+  type       String
+  userId     String?  @db.Uuid
+  sessionId  String?
+  properties Json?
+  occurredAt DateTime @default(now())
+
+  @@index([type, occurredAt])
+  @@index([userId])
+  @@map("analytics_events")
+}
+
+model AuditLogEntry {
+  id         String   @id @db.Uuid
+  actorId    String?  @db.Uuid
+  action     String
+  targetType String?
+  targetId   String?
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_log_entries")
+}
+
+model MediaAsset {
+  id        String      @id @db.Uuid
+  ownerId   String      @db.Uuid
+  bucket    String
+  key       String      @unique
+  mime      String
+  size      Int
+  width     Int?
+  height    Int?
+  status    MediaStatus @default(PENDING)
+  createdAt DateTime    @default(now())
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@map("media_assets")
+}
+
+model FeatureFlag {
+  key       String   @id
+  enabled   Boolean  @default(false)
+  payload   Json?
+  updatedAt DateTime @updatedAt
+
+  @@map("feature_flags")
+}
+
+model AppConfig {
+  id        Int      @id @default(1) // singleton row
+  version   Int      @default(1)
+  config    Json // score weights, thresholds, rate limits
+  updatedAt DateTime @updatedAt
+
+  @@map("app_config")
+}

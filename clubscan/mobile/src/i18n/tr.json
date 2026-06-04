@@ -1,0 +1,31 @@
+{
+  "common": {
+    "appName": "ClubScan",
+    "retry": "Tekrar dene",
+    "loading": "Yükleniyor…"
+  },
+  "auth": {
+    "welcomeTitle": "Daha güvenli bir gece bul",
+    "welcomeSubtitle": "Mekanları keşfet, gerçek güvenlik sinyallerini gör ve bilinçli kararlar al.",
+    "login": "Giriş yap",
+    "register": "Hesap oluştur",
+    "email": "E-posta",
+    "password": "Şifre",
+    "username": "Kullanıcı adı",
+    "forgotPassword": "Şifremi unuttum",
+    "continueWithGoogle": "Google ile devam et",
+    "continueWithApple": "Apple ile devam et"
+  },
+  "discover": {
+    "title": "Keşfet",
+    "nearby": "Yakınında",
+    "topVenues": "En yüksek puanlılar",
+    "empty": "Mekan bulunamadı"
+  },
+  "venue": {
+    "score": "ClubScan Puanı",
+    "reviews": "Yorumlar",
+    "safetyAdvisory": "Güvenlik uyarısı",
+    "writeReview": "Yorum yaz"
+  }
+}

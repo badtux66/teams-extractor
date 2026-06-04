@@ -1,0 +1,76 @@
+name: clubscan-backend-ci
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    paths:
+      - "clubscan/backend/**"
+      - ".github/workflows/clubscan-backend-ci.yml"
+  pull_request:
+    paths:
+      - "clubscan/backend/**"
+      - ".github/workflows/clubscan-backend-ci.yml"
+
+defaults:
+  run:
+    working-directory: clubscan/backend
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: clubscan
+          POSTGRES_PASSWORD: clubscan
+          POSTGRES_DB: clubscan_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U clubscan"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://clubscan:clubscan@localhost:5432/clubscan_test?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-only-secret-please-change-me-32chars
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: clubscan/backend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Prisma generate
+        run: pnpm prisma:generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Migrate + PostGIS
+        run: |
+          pnpm prisma migrate deploy || pnpm prisma db push
+          psql "$DATABASE_URL" -f prisma/sql/postgis.sql || true
+
+      - name: Unit tests
+        run: pnpm test
