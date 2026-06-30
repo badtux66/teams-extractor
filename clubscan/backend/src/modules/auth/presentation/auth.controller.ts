@@ -33,6 +33,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 15 * 60 * 1000 } })
   @HttpCode(200)
   @Post('verify-email')
   async verifyEmail(@Body() dto: VerifyEmailDto) {
@@ -49,6 +50,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 15 * 60 * 1000 } })
   @HttpCode(200)
   @Post('refresh')
   refresh(@Body() dto: RefreshDto, @Req() req: Request) {
@@ -80,6 +82,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 3, ttl: 60 * 60 * 1000 } })
   @HttpCode(200)
   @Post('reset-password')
   async resetPassword(@Body() dto: ResetPasswordDto) {
@@ -88,6 +91,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 15 * 60 * 1000 } })
   @HttpCode(200)
   @Post('oauth/google')
   oauthGoogle(@Body() dto: OAuthGoogleDto, @Req() req: Request) {
@@ -95,6 +99,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 15 * 60 * 1000 } })
   @HttpCode(200)
   @Post('oauth/apple')
   oauthApple(@Body() dto: OAuthAppleDto, @Req() req: Request) {

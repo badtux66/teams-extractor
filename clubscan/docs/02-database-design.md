@@ -102,7 +102,8 @@ erDiagram
 ### 3.2 Profile & Reputation
 - **profiles** — 1:1 with user: `username` (unique, citext), `displayName`, `bio`,
   `avatarUrl`, `verificationStatus` (enum), `isPrivate`. Reputation lives on `users` as a
-  cached score; the ledger is **reputation_events** (append-only deltas with reason).
+  cached score; the ledger is **reputation_events** (append-only deltas with reason,
+  `idempotencyKey` unique nullable — prevents duplicate adjustments from replayed events).
 - **social_links** — `platform`, `url`.
 - **follows** — (`followerId`, `followingId`) composite unique; self-follow forbidden.
 
@@ -144,6 +145,8 @@ erDiagram
 - **notifications** — `userId`, `type`, `payload` (JSONB), `readAt`, `sentPush` (bool).
 - **feed_entries** *(read model)* — `userId` (owner of feed), `actorId`, `verb`,
   `objectType`, `objectId`, `createdAt`. Fan-out-on-write for normal accounts.
+  Unique composite `@@unique([ownerId, actorId, verb, objectId])` prevents duplicate
+  entries during fan-out replays.
 
 ### 3.8 Analytics & Shared Kernel
 - **analytics_events** *(append-only, time-partitioned)* — `type`, `userId?`, `sessionId`,
@@ -161,7 +164,9 @@ erDiagram
 | Concern | Strategy |
 |---|---|
 | Geo radius ("near me") | PostGIS `geography(Point,4326)` + GiST index; `ST_DWithin` |
-| Venue/user/event search | `pg_trgm` GIN on name/title/username; full-text `tsvector` GIN on description/body |
+| PostGIS GiST index | GiST index on `venues.location` for `ST_DWithin` geo queries (created in `prisma/sql/postgis.sql`, applied via migration) |
+| Fuzzy text search | `pg_trgm` GIN indexes on `venues.name`, `events.title`, `profiles.username` for fuzzy/partial-match search (created in `prisma/sql/postgis.sql`, applied via migration) |
+| Venue/user/event search | Full-text `tsvector` GIN on description/body |
 | Venue listing & sort | composite indexes on (`city`,`status`), (`type`,`status`); score sort via `venue_scores` |
 | Feed reads | index `feed_entries(userId, createdAt DESC)` |
 | Reviews per venue | index `reviews(venueId, status, createdAt DESC)` |
@@ -189,8 +194,9 @@ erDiagram
 
 ## 6. Migration & Seed Strategy
 
-- Prisma Migrate for schema; PostGIS + extensions (`citext`, `pg_trgm`, `uuid`/pgcrypto) added
-  in an initial SQL migration.
+- **Prisma Migrate** with a baseline migration directory (`prisma/migrations/0_init/`);
+  PostGIS + extensions (`citext`, `pg_trgm`, `uuid`/pgcrypto) added in that initial SQL
+  migration. Subsequent changes go through `prisma migrate dev`.
 - `Unsupported("geography(Point, 4326)")` column + raw SQL GiST index in migration; geo
   queries via `prisma.$queryRaw` in the Venue repository.
 - Seed script: genres master list, app_config (default score weights from Phase 1 §4.2),

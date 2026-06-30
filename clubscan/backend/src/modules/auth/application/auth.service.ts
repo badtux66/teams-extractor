@@ -191,7 +191,7 @@ export class AuthService {
         ? await this.oauth.verifyGoogle(token)
         : await this.oauth.verifyApple(token);
 
-    let account = await this.prisma.oAuthAccount.findUnique({
+    const account = await this.prisma.oAuthAccount.findUnique({
       where: {
         provider_providerAccountId: {
           provider: identity.provider,
