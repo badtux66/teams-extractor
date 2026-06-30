@@ -37,6 +37,7 @@ export class FeedService {
         objectType: params.objectType,
         objectId: params.objectId,
       })),
+      skipDuplicates: true,
     });
   }
 

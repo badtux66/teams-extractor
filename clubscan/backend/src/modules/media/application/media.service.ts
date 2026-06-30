@@ -23,7 +23,7 @@ export class MediaService {
     const { uploadUrl } = await this.storage.presignUpload({
       key,
       mime: dto.mime,
-      maxSize: MAX_UPLOAD_SIZE,
+      size: dto.size,
     });
 
     await this.prisma.mediaAsset.create({

@@ -18,15 +18,23 @@ export const REPUTATION_RULES = {
 export class ReputationService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async adjust(userId: string, delta: number, reason: string): Promise<void> {
-    await this.prisma.$transaction([
-      this.prisma.reputationEvent.create({
-        data: { id: newId(), userId, delta, reason },
-      }),
-      this.prisma.user.update({
-        where: { id: userId },
-        data: { reputationScore: { increment: delta } },
-      }),
-    ]);
+  async adjust(userId: string, delta: number, reason: string, idempotencyKey?: string): Promise<void> {
+    try {
+      await this.prisma.$transaction([
+        this.prisma.reputationEvent.create({
+          data: { id: newId(), userId, delta, reason, idempotencyKey },
+        }),
+        this.prisma.user.update({
+          where: { id: userId },
+          data: { reputationScore: { increment: delta } },
+        }),
+      ]);
+    } catch (error: any) {
+      // P2002: Unique constraint failed on the fields: (`idempotencyKey`)
+      if (error.code === 'P2002') {
+        return; // Idempotent: already processed
+      }
+      throw error;
+    }
   }
 }

@@ -28,6 +28,7 @@ clubscan/
 | 5 | [Infrastructure Architecture](docs/05-infrastructure-architecture.md) |
 | 6 | [Security Architecture](docs/06-security-architecture.md) |
 | 7 | [Folder Structures](docs/07-folder-structures.md) |
+| 8 | [Implementation Status](docs/08-implementation-status.md) |
 
 ## Quick start (local)
 
@@ -39,12 +40,12 @@ docker compose up -d postgres redis minio createbuckets mailhog
 # 2) Backend
 cd backend
 cp .env.example .env
-pnpm install
-pnpm prisma:generate
-pnpm prisma migrate dev           # baseline schema
+npm install
+npm run prisma:generate
+npm run prisma migrate dev        # baseline schema
 psql "$DATABASE_URL" -f prisma/sql/postgis.sql   # geospatial augmentation
-pnpm prisma:seed
-pnpm start:dev                    # http://localhost:3000/api/v1 (docs at /api/v1/docs)
+npm run prisma:seed
+npm run start:dev                 # http://localhost:3000/api/v1 (docs at /api/v1/docs)
 ```
 
 ## The ClubScan Score
@@ -59,8 +60,8 @@ aggregate that prioritizes safety and resists manipulation. See
 
 **Mobile:** Expo · TypeScript · Expo Router · TanStack Query · Zustand · RHF + Zod · NativeWind
 **Backend:** NestJS · TypeScript · Prisma · PostgreSQL · Redis
-**Auth:** JWT (access) + rotating refresh tokens + Google/Apple OAuth
-**Infra:** Docker · GitHub Actions · S3-compatible storage · FCM · Sentry · OpenTelemetry
+**Auth:** JWT (access) + rotating refresh tokens + Google/Apple OAuth (JWKS-verified)
+**Infra:** Docker · GitHub Actions · S3-compatible storage · FCM (firebase-admin) · Sentry · OpenTelemetry
 
 ## License
 

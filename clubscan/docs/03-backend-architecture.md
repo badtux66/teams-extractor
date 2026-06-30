@@ -56,9 +56,9 @@ infrastructure/ Prisma repositories, S3/FCM/OAuth/AI adapters (implement applica
 - **Guards (global where sensible):** `JwtAuthGuard`, `RolesGuard` (`@Roles()`),
   `PoliciesGuard` (`@CheckPolicy()` for ABAC ownership checks), `ThrottlerGuard` (Redis store).
 - **Interceptors:** `SerializerInterceptor` (strip sensitive fields), `AuditInterceptor`
-  (`@Audit()` on privileged handlers → AuditLogEntry), `LoggingInterceptor` (OTel span +
-  request id), `ShadowBanInterceptor` (shadow-banned users see their own content as live but
-  it's excluded from others' reads).
+  (global, auto-logs all mutation requests with actor, IP, sanitized body → AuditLogEntry),
+  `LoggingInterceptor` (OTel span + request id), `ShadowBanInterceptor` (shadow-banned users
+  see their own content as live but it's excluded from others' reads).
 - **Filters:** `AllExceptionsFilter` → RFC7807 problem+json, Sentry capture, no stack leaks.
 - **i18n:** `nestjs-i18n`, `Accept-Language` + user.locale; error messages translated (EN/TR).
 
@@ -71,8 +71,10 @@ infrastructure/ Prisma repositories, S3/FCM/OAuth/AI adapters (implement applica
 - **Endpoints:** `/auth/register`, `/auth/verify-email`, `/auth/login`, `/auth/refresh`,
   `/auth/logout`, `/auth/logout-all`, `/auth/forgot-password`, `/auth/reset-password`,
   `/auth/oauth/google`, `/auth/oauth/apple`.
-- **OAuth:** verify Google ID token / Apple identity token server-side; link or create user +
-  `oauth_accounts`; first-time → username selection step.
+- **OAuth:** verify Google ID token server-side; Apple identity tokens verified via JWKS
+  (`jsonwebtoken` + `jwks-rsa` fetching Apple's public keys from
+  `https://appleid.apple.com/auth/keys`); link or create user + `oauth_accounts`; first-time →
+  username selection step.
 - **Device & session mgmt:** `/me/sessions` (list/revoke), `/me/devices` (register FCM token,
   revoke). Refresh binds to `deviceId`.
 
@@ -102,9 +104,15 @@ replicas.
 
 ## 7. Audit Logging
 
-`@Audit({ action })` interceptor records `actorId`, `action`, `targetType/Id`, `metadata`,
-`ip` to `audit_log_entries` for: role changes, bans/shadow bans, content removal, config
-changes, data-protection actions, login from new device. Append-only; never updated.
+`AuditInterceptor` is registered globally via `APP_INTERCEPTOR` and automatically logs all
+mutation API calls (POST/PUT/PATCH/DELETE). Each entry records `actorId`, `action` (HTTP
+method + route path), `ip`, and sanitized `metadata` (passwords/tokens/secrets redacted) to
+`audit_log_entries`. The interceptor runs fire-and-forget so it never blocks the HTTP response.
+Append-only; never updated.
+
+Manual `AuditService.record()` calls remain in `ModerationService` and `SafetyService` for
+additional context-rich audit entries (e.g. role changes, bans/shadow bans, content removal,
+escalation state transitions).
 
 ## 8. Event Bus & CQRS Flow
 
@@ -114,6 +122,9 @@ changes, data-protection actions, login from new device. Append-only; never upda
   `UserFollowed`, `EventSaved`, `ReportFiled`, `IncidentSubmitted`, `SanctionIssued`.
 - **Reactors** (async handlers): score recompute, search reindex, feed fan-out, notification
   dispatch (+FCM), analytics ingest, reputation update.
+- All reactors use **idempotency keys** — reputation events carry a unique `idempotencyKey`
+  column; feed fan-out uses a composite unique constraint with `skipDuplicates`. This makes the
+  system safe for at-least-once delivery semantics.
 - Write path stays fast & transactional; projections update eventually (seconds).
 
 ## 9. REST API Contract (v1, prefix `/api/v1`)

@@ -7,6 +7,8 @@ import {
   OAuthVerifierPort,
   VerifiedOAuthIdentity,
 } from '../application/ports/oauth-verifier.port';
+import * as jwt from 'jsonwebtoken';
+import * as jwksClient from 'jwks-rsa';
 
 /**
  * Verifies Google and Apple identity tokens server-side. Google uses the
@@ -56,12 +58,40 @@ export class OAuthVerifierAdapter implements OAuthVerifierPort {
     };
   }
 
-  // Placeholder seam for the JWKS-backed Apple verification (kept isolated so
-  // the rest of the auth flow is provider-agnostic and testable).
+  // JWKS-backed Apple verification
   private async verifyAppleJwt(
-    _token: string,
-    _audience: string,
+    token: string,
+    audience: string,
   ): Promise<{ sub: string; email?: string; email_verified?: string | boolean }> {
-    throw DomainError.unauthorized('Apple verification not yet wired in this environment');
+    const client = jwksClient.default({
+      jwksUri: 'https://appleid.apple.com/auth/keys',
+      cache: true,
+      rateLimit: true,
+      jwksRequestsPerMinute: 10,
+    });
+
+    const getKey = (header: jwt.JwtHeader, callback: jwt.SigningKeyCallback) => {
+      client.getSigningKey(header.kid, (err, key) => {
+        if (err) return callback(err);
+        const signingKey = key?.getPublicKey();
+        callback(null, signingKey);
+      });
+    };
+
+    return new Promise((resolve, reject) => {
+      jwt.verify(
+        token,
+        getKey,
+        {
+          algorithms: ['RS256'],
+          issuer: 'https://appleid.apple.com',
+          audience,
+        },
+        (err, decoded) => {
+          if (err) return reject(DomainError.unauthorized('Invalid Apple token: ' + err.message));
+          resolve(decoded as any);
+        },
+      );
+    });
   }
 }

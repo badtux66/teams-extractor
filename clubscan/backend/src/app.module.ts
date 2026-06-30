@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ZodValidationPipe } from 'nestjs-zod';
@@ -9,6 +9,7 @@ import { PrismaModule } from '@/platform/prisma/prisma.module';
 import { AppConfigModule } from '@/platform/config/app-config.module';
 import { EventBusModule } from '@/platform/event-bus/event-bus.module';
 import { AuditModule } from '@/platform/audit/audit.module';
+import { AuditInterceptor } from '@/platform/audit/audit.interceptor';
 import { SecurityModule } from '@/platform/security/security.module';
 import { JwtAuthGuard } from '@/platform/security/jwt-auth.guard';
 import { RolesGuard } from '@/platform/security/roles.guard';
@@ -63,6 +64,7 @@ import { HealthModule } from '@/modules/health/health.module';
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],
 })
 export class AppModule {}

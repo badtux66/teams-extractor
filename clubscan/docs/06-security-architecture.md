@@ -12,7 +12,7 @@
 
 | Threat | Vector | Mitigation |
 |---|---|---|
-| **Spoofing** | Stolen tokens, OAuth replay | Short JWT TTL, hashed rotating refresh + reuse detection, server-side OAuth token verification, device binding |
+| **Spoofing** | Stolen tokens, OAuth replay | Short JWT TTL, hashed rotating refresh + reuse detection, server-side OAuth token verification (Apple OAuth uses JWKS-based identity token verification via `jsonwebtoken` + `jwks-rsa`), device binding |
 | **Tampering** | Mass-assignment, param tampering, IDOR | Whitelist DTOs, ownership policies (ABAC), UUID v7 (non-enumerable), authz on every object access |
 | **Repudiation** | "I didn't ban them" | Immutable audit log for all privileged actions |
 | **Information disclosure** | PII leak, safety-report exposure, stack traces | Field serialization stripping, RBAC on safety data, RFC7807 (no stack/SQL leakage), least-privilege DB |
@@ -64,7 +64,9 @@ one-review-per-venue + AI/human moderation. Fake venues → curated/admin publis
 
 ## 5. Secure File Uploads
 - Presigned **PUT** direct to S3; backend issues short-TTL URL scoped to `key` + `content-type`
-  + max size. Allowed MIME allowlist (image/jpeg|png|webp|heic); size cap (e.g. 10MB).
+  + max size + **`ContentLength`** (exact declared file size passed to `PutObjectCommand` so S3
+  rejects uploads that don't match). Allowed MIME allowlist (image/jpeg|png|webp|heic); size cap
+  (e.g. 10MB).
 - Server-side validation on `/media/:id/complete`: re-check content-type/size via S3 head;
   optionally async image processing (strip EXIF/GPS, re-encode, generate thumbnails) to
   neutralize malicious payloads and protect privacy. Assets `PENDING`→`READY`; only `READY`
@@ -80,9 +82,13 @@ one-review-per-venue + AI/human moderation. Fake venues → curated/admin publis
   stripped from photos by default.
 
 ## 7. Audit Trail
-- Append-only `audit_log_entries` via `@Audit()` interceptor: who/what/when/where for bans,
-  shadow bans, role changes, content removals, config changes, safety-data access, new-device
-  logins. Immutable, queryable by SUPER_ADMIN, exportable for incident response.
+- Append-only `audit_log_entries` via global `AuditInterceptor`
+  (`platform/audit/audit.interceptor.ts`, registered as `APP_INTERCEPTOR` in `app.module.ts`).
+  Auto-logs **all mutation HTTP methods** (POST / PUT / PATCH / DELETE) with: actor ID, action
+  (method + route path), IP address, and sanitized request body (passwords / tokens / secrets
+  redacted). Fires-and-forgets so it never blocks the response.
+- Covers bans, shadow bans, role changes, content removals, config changes, safety-data access,
+  new-device logins. Immutable, queryable by SUPER_ADMIN, exportable for incident response.
 
 ## 8. Mobile (MASVS) Notes
 - Tokens in **SecureStore/Keychain** (not AsyncStorage); certificate pinning option;

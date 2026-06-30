@@ -38,11 +38,12 @@ export class S3StorageAdapter implements StoragePort {
     });
   }
 
-  async presignUpload(params: { key: string; mime: string }): Promise<PresignedUpload> {
+  async presignUpload(params: { key: string; mime: string; size: number }): Promise<PresignedUpload> {
     const command = new PutObjectCommand({
       Bucket: this.bucket,
       Key: params.key,
       ContentType: params.mime,
+      ContentLength: params.size,
     });
     const uploadUrl = await getSignedUrl(this.client, command, { expiresIn: UPLOAD_TTL_SECONDS });
     return { uploadUrl, key: params.key };

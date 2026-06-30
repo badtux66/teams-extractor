@@ -14,7 +14,7 @@ export interface StoragePort {
   presignUpload(params: {
     key: string;
     mime: string;
-    maxSize: number;
+    size: number;
   }): Promise<PresignedUpload>;
   headObject(key: string): Promise<{ size: number; mime: string } | null>;
   publicUrl(key: string): string;

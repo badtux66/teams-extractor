@@ -2,13 +2,14 @@ import { Module } from '@nestjs/common';
 import { ReviewsService } from './application/reviews.service';
 import { CONTENT_MODERATION } from './application/ports/content-moderation.port';
 import { RuleBasedModerationAdapter } from './infrastructure/rule-based-moderation.adapter';
+import { GeminiModerationAdapter } from './infrastructure/gemini-moderation.adapter';
 import { ReviewsController } from './presentation/reviews.controller';
 
 @Module({
   controllers: [ReviewsController],
   providers: [
     ReviewsService,
-    { provide: CONTENT_MODERATION, useClass: RuleBasedModerationAdapter },
+    { provide: CONTENT_MODERATION, useClass: GeminiModerationAdapter },
   ],
 })
 export class ReviewsModule {}

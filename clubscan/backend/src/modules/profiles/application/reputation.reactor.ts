@@ -15,6 +15,7 @@ export class ReputationReactor {
       event.payload.authorId,
       REPUTATION_RULES.REVIEW_PUBLISHED,
       'review.published',
+      `review_pub_${event.payload.reviewId}`,
     );
   }
 
@@ -24,6 +25,7 @@ export class ReputationReactor {
       event.payload.followingId,
       REPUTATION_RULES.GAINED_FOLLOWER,
       'gained.follower',
+      `follow_${event.payload.followerId}_${event.payload.followingId}`,
     );
   }
 }

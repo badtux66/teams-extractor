@@ -340,11 +340,12 @@ model Follow {
 }
 
 model ReputationEvent {
-  id        String   @id @db.Uuid
-  userId    String   @db.Uuid
-  delta     Int
-  reason    String
-  createdAt DateTime @default(now())
+  id             String   @id @db.Uuid
+  userId         String   @db.Uuid
+  delta          Int
+  reason         String
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -744,6 +745,7 @@ model FeedEntry {
   owner User @relation("FeedOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   actor User @relation("FeedActor", fields: [actorId], references: [id], onDelete: Cascade)
 
+  @@unique([ownerId, actorId, verb, objectId])
   @@index([ownerId, createdAt])
   @@map("feed_entries")
 }
